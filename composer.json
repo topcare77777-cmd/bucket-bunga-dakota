@@ -1,0 +1,14 @@
+{
+    "name": "bucket-bunga/dakota",
+    "description": "Bucket Bunga Dakota Enterprise Project",
+    "type": "project",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "app\\": "app/"
+        }
+    },
+    "require": {
+        "php": ">=8.2"
+    }
+}

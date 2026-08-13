@@ -1,0 +1,9 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /api/
+Disallow: /workspace/
+Disallow: /settings/
+Allow: /
+Allow: /login
+
+Sitemap: https://promomgr.com/sitemap.xml

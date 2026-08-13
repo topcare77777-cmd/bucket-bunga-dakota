@@ -1,0 +1,183 @@
+import os
+
+html_content = """
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page {
+        size: A4;
+        margin: 15mm 12mm;
+        background-color: #faf8f5;
+    }
+    body {
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        color: #2d3748;
+        margin: 0;
+        padding: 0;
+        line-height: 1.6;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    h1 { color: #1a365d; font-size: 20pt; margin-top: 30px; margin-bottom: 10px; border-bottom: 2px solid #cbd5e0; padding-bottom: 5px; page-break-after: avoid; }
+    h2 { color: #2b6cb0; font-size: 14pt; margin-top: 20px; border-left: 4px solid #2b6cb0; padding-left: 10px; page-break-after: avoid; }
+    p, li { font-size: 11pt; margin-bottom: 8px; }
+    ul, ol { padding-left: 25px; margin-bottom: 15px; }
+    .cover { text-align: center; margin-top: 250px; margin-bottom: 250px; page-break-after: avoid; }
+    .cover-title { font-size: 34pt; font-weight: bold; color: #1a365d; margin-bottom: 10px; }
+    .cover-subtitle { font-size: 16pt; color: #718096; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; margin-bottom: 25px; font-size: 10pt; background-color: #ffffff; }
+    th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
+    th { background-color: #ebf8ff; color: #2b6cb0; font-weight: bold; }
+    .tree-block { background-color: #edf2f7; padding: 15px; border-radius: 6px; font-family: 'Courier New', Courier, monospace; font-size: 9.5pt; white-space: pre-wrap; line-height: 1.4; border: 1px solid #e2e8f0; }
+</style>
+</head>
+<body>
+    <div class="cover">
+        <div class="cover-title">Handbook Project</div>
+        <div class="cover-subtitle">Software Requirement Specification (SRS) & Arsitektur</div>
+    </div>
+    
+    <div style="page-break-before: always;"></div>
+    
+    <h1>1. Pendahuluan</h1>
+    <p>Dokumen ini adalah Handbook Project yang berisi Software Requirement Specification (SRS) untuk sistem <strong>Manajemen Kampanye Promosi Digital (Digital Promo Campaign Manager)</strong>. Sistem ini dirancang untuk memfasilitasi perancangan, manajemen aset, dan kolaborasi materi pemasaran digital, khususnya untuk kampanye produk konsumen seperti parfum dan pakaian.</p>
+
+    <h1>2. Business Requirement</h1>
+    <ul>
+        <li><strong>Efisiensi Produksi Konten:</strong> Mempercepat siklus pembuatan, peninjauan, dan persetujuan materi promosi digital dan iklan media sosial.</li>
+        <li><strong>Sentralisasi Aset:</strong> Menyediakan repositori terpusat dan aman untuk semua aset kreatif (termasuk video vertikal 9:16, gambar kampanye resolusi tinggi, dan storyboard).</li>
+        <li><strong>Kolaborasi Real-time:</strong> Memfasilitasi komunikasi dan kolaborasi yang mulus antara pengarah kreatif, desainer, dan tim manajemen pemasaran.</li>
+    </ul>
+
+    <h1>3. Functional Requirement</h1>
+    <ul>
+        <li><strong>Manajemen Kampanye:</strong> Pengguna dapat membuat, mengedit, menjadwalkan, dan mengarsipkan proyek kampanye pemasaran digital.</li>
+        <li><strong>Manajemen Aset (DAM):</strong> Sistem harus mendukung pengunggahan multi-format, transcoding video otomatis untuk pratinjau web, dan manajemen versi aset.</li>
+        <li><strong>Alur Persetujuan (Approval Workflow):</strong> Sistem harus memiliki fitur anotasi visual untuk meninggalkan komentar revisi langsung pada titik waktu (timestamp) video atau area gambar spesifik.</li>
+        <li><strong>Manajemen Pengguna & Otorisasi:</strong> Sistem menggunakan Role-Based Access Control (RBAC) untuk peran seperti Administrator, Creative Director, Designer, dan Reviewer.</li>
+    </ul>
+
+    <h1>4. Non-Functional Requirement</h1>
+    <ul>
+        <li><strong>Kinerja:</strong> Waktu muat halaman (Page Load Time) maksimal 2 detik pada koneksi standar. Pratinjau video harus dimuat dengan buffering kurang dari 3 detik.</li>
+        <li><strong>Keamanan:</strong> Enkripsi data pada penyimpanan (AES-256) dan saat transit (TLS 1.3). Autentikasi menggunakan standar JWT (JSON Web Tokens).</li>
+        <li><strong>Skalabilitas:</strong> Arsitektur harus mendukung penskalaan horizontal untuk layanan penyimpanan media yang membutuhkan throughput tinggi.</li>
+        <li><strong>Ketersediaan:</strong> Service Level Agreement (SLA) uptime 99.9% dengan mekanisme pencadangan data (backup) harian otomatis.</li>
+    </ul>
+
+    <h1>5. Use Case</h1>
+    <table>
+        <tr>
+            <th>Use Case ID</th>
+            <th>Nama Use Case</th>
+            <th>Aktor Utama</th>
+            <th>Deskripsi Singkat</th>
+        </tr>
+        <tr>
+            <td>UC-01</td>
+            <td>Membuat Kampanye Baru</td>
+            <td>Creative Director</td>
+            <td>Menginisiasi proyek kampanye iklan baru, menetapkan target, dan menentukan tenggat waktu (timeline).</td>
+        </tr>
+        <tr>
+            <td>UC-02</td>
+            <td>Mengunggah Materi Promosi</td>
+            <td>Designer</td>
+            <td>Mengunggah aset desain (video vertikal/gambar grafis) ke dalam modul kampanye terkait.</td>
+        </tr>
+        <tr>
+            <td>UC-03</td>
+            <td>Meninjau dan Memberi Anotasi</td>
+            <td>Creative Director / Reviewer</td>
+            <td>Memutar video promosi, melakukan jeda, dan menambahkan catatan revisi pada frame tertentu.</td>
+        </tr>
+        <tr>
+            <td>UC-04</td>
+            <td>Menyetujui Kampanye</td>
+            <td>Reviewer</td>
+            <td>Memberikan persetujuan final (Sign-off) pada semua materi dalam satu kampanye.</td>
+        </tr>
+    </table>
+
+    <h1>6. User Flow (Alur Peninjauan Materi)</h1>
+    <ol>
+        <li>Pengguna melakukan autentikasi (Login) ke dalam sistem.</li>
+        <li>Sistem mengarahkan pengguna ke halaman utama (<em>Dashboard</em>).</li>
+        <li>Pengguna memilih proyek kampanye yang berstatus "Menunggu Ulasan" (Pending Review).</li>
+        <li>Pengguna menavigasi ke panel <em>Aset & Materi</em>.</li>
+        <li>Pengguna membuka pratinjau aset (misalnya video komersial).</li>
+        <li>Pengguna menekan tombol <strong>Setujui (Approve)</strong> atau <strong>Minta Revisi (Request Revision)</strong> dengan melampirkan catatan.</li>
+        <li>Sistem secara otomatis memperbarui status aset dan mengirimkan notifikasi internal kepada tim desainer.</li>
+    </ol>
+
+    <div style="page-break-before: always;"></div>
+
+    <h1>7. Site Map</h1>
+    <ul>
+        <li><strong>Dashboard</strong> (Ringkasan Proyek, Tugas Saya, Notifikasi Terbaru)</li>
+        <li><strong>Manajemen Kampanye</strong>
+            <ul>
+                <li>Daftar Kampanye (Aktif / Tertunda / Selesai / Arsip)</li>
+                <li>Papan Kanban Proyek</li>
+                <li>Detail Kampanye (Anggota Tim, Linimasa)</li>
+            </ul>
+        </li>
+        <li><strong>Library Aset Digital</strong> (Pencarian Global, Filter Tag, Semua Media)</li>
+        <li><strong>Laporan & Analitik</strong> (Kecepatan Penyelesaian, Status Persetujuan)</li>
+        <li><strong>Pengaturan</strong>
+            <ul>
+                <li>Profil Pengguna</li>
+                <li>Manajemen Akses & Peran</li>
+                <li>Konfigurasi Notifikasi</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h1>8. Struktur Project (Arsitektur Backend & Frontend)</h1>
+    <p>Struktur direktori di bawah ini adalah panduan baku arsitektur yang akan kita gunakan. Kita akan menggunakan arsitektur Monorepo yang memisahkan aplikasi Frontend dan Backend, namun dalam satu repositori terkontrol.</p>
+    
+    <div class="tree-block">
+root/
+├── .github/                 # Konfigurasi CI/CD workflows
+├── docs/                    # Dokumentasi, diagram, dan Handbook Project
+├── backend/                 # Layanan API Utama
+│   ├── src/
+│   │   ├── config/          # Pengaturan environment & database
+│   │   ├── controllers/     # Logika pemrosesan HTTP request & response
+│   │   ├── middlewares/     # Interseptor (Autentikasi, validasi schema)
+│   │   ├── models/          # Definisi entitas/skema database
+│   │   ├── routes/          # Definisi endpoint (Routing API)
+│   │   ├── services/        # Logika bisnis terpusat (Business Logic)
+│   │   └── utils/           # Fungsi bantuan (logger, error handler)
+│   ├── tests/               # Unit test dan integration test
+│   ├── package.json
+│   └── Dockerfile
+├── frontend/                # Aplikasi Antarmuka Pengguna
+│   ├── public/              # Aset web statis (favicon, logo)
+│   ├── src/
+│   │   ├── app/             # Konfigurasi Router (halaman web utama)
+│   │   ├── components/      # Komponen UI modular yang dapat digunakan ulang
+│   │   ├── hooks/           # Custom React hooks (logika state reaktif)
+│   │   ├── lib/             # Konfigurasi client API eksternal
+│   │   ├── store/           # Manajemen state global aplikasi
+│   │   ├── types/           # Definisi tipe data statis
+│   │   └── styles/          # Konfigurasi gaya visual & CSS
+│   ├── package.json
+│   └── Dockerfile
+├── docker-compose.yml       # Konfigurasi containerized database & Redis lokal
+├── .gitignore
+└── README.md
+    </div>
+
+</body>
+</html>
+"""
+
+from weasyprint import HTML
+import tempfile
+
+output_path = "/mnt/data/Handbook_Project_SRS.pdf"
+HTML(string=html_content).write_pdf(output_path)
+print(f"File PDF berhasil dibuat: {output_path}")
+print(f"tag: handbook-project-pdf-{hash(html_content)}")
