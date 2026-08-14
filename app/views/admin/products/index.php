@@ -19,7 +19,15 @@
                     </div>
                     <a href="/admin/products" class="block py-2.5 px-4 rounded bg-slate-800 font-medium">Daftar Produk</a>
                     <a href="/admin/products/create" class="block py-2.5 px-4 rounded hover:bg-slate-800 transition">Tambah & Unggah Produk</a>
+                    <div class="pt-4 pb-1">
+                        <span class="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider">Pengaturan</span>
+                    </div>
+                    <a href="/admin/change-contact" class="block py-2.5 px-4 rounded hover:bg-slate-800 transition">Kontak WhatsApp</a>
+                    <a href="/admin/change-password" class="block py-2.5 px-4 rounded hover:bg-slate-800 transition">Ganti Password</a>
                 </nav>
+            </div>
+            <div>
+                <a href="/admin/logout" class="block py-2.5 px-4 rounded text-red-400 hover:bg-slate-800 hover:text-red-300 transition text-sm">Keluar (Logout)</a>
             </div>
         </aside>
 
@@ -33,6 +41,18 @@
                     + Tambah Produk Baru
                 </a>
             </header>
+
+            <?php if (!empty($success)): ?>
+                <div class="mb-6 p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm rounded-lg">
+                    <?= htmlspecialchars($success, ENT_QUOTES, 'UTF-8') ?>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!empty($error)): ?>
+                <div class="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+                    <?= htmlspecialchars($error, ENT_QUOTES, 'UTF-8') ?>
+                </div>
+            <?php endif; ?>
 
             <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
                 <table class="w-full text-left border-collapse">
@@ -49,34 +69,45 @@
                     <tbody class="divide-y divide-slate-200 text-sm">
                         <?php if (!empty($products)): ?>
                             <?php foreach ($products as $product): ?>
+                                <?php 
+                                    $imgSrc = !empty($product['thumbnail_url']) ? $product['thumbnail_url'] : ($product['image_url'] ?? null);
+                                    $status = strtolower((string) ($product['status'] ?? 'available'));
+                                    
+                                    $statusBadge = match($status) {
+                                        'sold' => 'bg-red-100 text-red-800',
+                                        'reserved' => 'bg-amber-100 text-amber-800',
+                                        default => 'bg-emerald-100 text-emerald-800'
+                                    };
+                                ?>
                                 <tr class="hover:bg-slate-50/80 transition">
                                     <td class="p-4">
-                                        <?php if (!empty($product['image'])): ?>
-                                            <img src="/uploads/products/<?= htmlspecialchars($product['image']) ?>" 
-                                                 alt="<?= htmlspecialchars($product['name']) ?>" 
-                                                 class="w-14 h-14 object-cover rounded-lg border border-slate-200 shadow-sm">
+                                        <?php if (!empty($imgSrc)): ?>
+                                            <img src="<?= htmlspecialchars($imgSrc, ENT_QUOTES, 'UTF-8') ?>" 
+                                                 alt="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>" 
+                                                 class="w-14 h-14 object-cover rounded-lg border border-slate-200 shadow-sm"
+                                                 loading="lazy">
                                         <?php else: ?>
                                             <span class="text-xs text-slate-400 italic">Tanpa Gambar</span>
                                         <?php endif; ?>
                                     </td>
                                     <td class="p-4 font-semibold text-slate-800">
-                                        <?= htmlspecialchars($product['name']) ?>
+                                        <?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>
                                     </td>
                                     <td class="p-4 text-slate-600">
                                         Rp <?= number_format((float) $product['price'], 0, ',', '.') ?>
                                     </td>
                                     <td class="p-4 text-slate-600">
-                                        <?= (int) $product['stock'] ?> pcs
+                                        <?= (int) ($product['stock'] ?? 0) ?> pcs
                                     </td>
                                     <td class="p-4">
-                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
-                                            <?= strtoupper(htmlspecialchars($product['status'] ?? 'ACTIVE')) ?>
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <?= $statusBadge ?>">
+                                            <?= strtoupper(htmlspecialchars($status, ENT_QUOTES, 'UTF-8')) ?>
                                         </span>
                                     </td>
                                     <td class="p-4 text-right space-x-2">
-                                        <a href="/admin/products/edit?id=<?= $product['id'] ?>" class="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</a>
+                                        <a href="/admin/products/edit?id=<?= (int) $product['id'] ?>" class="text-blue-600 hover:text-blue-800 font-medium text-xs">Edit</a>
                                         <form action="/admin/products/delete" method="POST" class="inline" onsubmit="return confirm('Yakin ingin menghapus produk ini?');">
-                                            <input type="hidden" name="id" value="<?= $product['id'] ?>">
+                                            <input type="hidden" name="id" value="<?= (int) $product['id'] ?>">
                                             <button type="submit" class="text-red-600 hover:text-red-800 font-medium text-xs">Hapus</button>
                                         </form>
                                     </td>

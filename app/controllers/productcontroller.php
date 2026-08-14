@@ -4,15 +4,19 @@ declare(strict_types=1);
 namespace app\controllers;
 
 use app\models\product;
+use app\services\productimageservice;
 use app\core\database;
+use Throwable;
 
 class productcontroller extends basecontroller
 {
     private product $productModel;
+    private productimageservice $imageService;
 
     public function __construct()
     {
         $this->productModel = new product();
+        $this->imageService = new productimageservice();
     }
 
     /**
@@ -22,7 +26,8 @@ class productcontroller extends basecontroller
     {
         try {
             $products = $this->productModel->getAll();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            error_log('[ProductController:home] Error fetching products: ' . $e->getMessage());
             $products = [];
         }
 
@@ -32,13 +37,12 @@ class productcontroller extends basecontroller
             $stmt = $db->query("SELECT phone FROM admins ORDER BY id ASC LIMIT 1");
             $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
             if (!empty($admin['phone'])) {
-                $adminPhone = $admin['phone'];
+                $adminPhone = (string) $admin['phone'];
             }
-        } catch (\Throwable $e) {
-            // Default nomor jika error
+        } catch (Throwable $e) {
+            error_log('[ProductController:home] Error fetching contact: ' . $e->getMessage());
         }
 
-        // Cari file view home secara otomatis
         $possibleViews = [
             __DIR__ . '/../views/home/index.php',
             __DIR__ . '/../views/Home/index.php',
@@ -53,7 +57,7 @@ class productcontroller extends basecontroller
             }
         }
 
-        die("View halaman home tidak ditemukan.");
+        die('View halaman home tidak ditemukan.');
     }
 
     /**
@@ -63,7 +67,8 @@ class productcontroller extends basecontroller
     {
         try {
             $products = $this->productModel->getAll();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            error_log('[ProductController:dashboard] Error fetching products: ' . $e->getMessage());
             $products = [];
         }
 
@@ -74,8 +79,8 @@ class productcontroller extends basecontroller
             $db = database::getconnection();
             $totalVisitors = (int) $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'visitor'")->fetchColumn();
             $totalOrders   = (int) $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'order'")->fetchColumn();
-        } catch (\Throwable $e) {
-            // Database offline fallback
+        } catch (Throwable $e) {
+            error_log('[ProductController:dashboard] Error fetching stats: ' . $e->getMessage());
         }
 
         $totalProducts = count($products);
@@ -90,7 +95,8 @@ class productcontroller extends basecontroller
     {
         try {
             $products = $this->productModel->getAll();
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            error_log('[ProductController:index] Error fetching products: ' . $e->getMessage());
             $products = [];
         }
 
@@ -113,106 +119,61 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Helper Unggah & Otomatis Konversi Semua Gambar ke Format WEBP
-     * Kompatibel penuh PHP 8.0 - PHP 8.5+
-     */
-    private function handleImageUpload(array $file): ?string
-    {
-        if (empty($file['name']) || empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) {
-            return null;
-        }
-
-        // Cek MIME type dengan aman
-        $mime = '';
-        if (function_exists('mime_content_type')) {
-            $mime = (string) mime_content_type($file['tmp_name']);
-        } elseif (function_exists('finfo_open')) {
-            $finfo = finfo_open(FILEINFO_MIME_TYPE);
-            $mime = (string) finfo_file($finfo, $file['tmp_name']);
-        }
-
-        $imageResource = null;
-        switch ($mime) {
-            case 'image/jpeg':
-            case 'image/jpg':
-                $imageResource = @imagecreatefromjpeg($file['tmp_name']);
-                break;
-            case 'image/png':
-                $imageResource = @imagecreatefrompng($file['tmp_name']);
-                if ($imageResource) {
-                    imagepalettetotruecolor($imageResource);
-                    imagealphablending($imageResource, true);
-                    imagesavealpha($imageResource, true);
-                }
-                break;
-            case 'image/webp':
-                $imageResource = @imagecreatefromwebp($file['tmp_name']);
-                break;
-            default:
-                throw new \Exception('Format file tidak didukung. Harap unggah format JPG, PNG, atau WEBP.');
-        }
-
-        if (!$imageResource) {
-            throw new \Exception('Gagal memproses file gambar.');
-        }
-
-        $isVercel = !empty(getenv('VERCEL')) || !empty(getenv('DB_HOST'));
-
-        // 1. JIKA DI VERCEL (Serverless): Simpan sebagai WebP Base64 Data URL
-        if ($isVercel) {
-            ob_start();
-            imagewebp($imageResource, null, 80);
-            $webpData = ob_get_clean();
-
-            return 'data:image/webp;base64,' . base64_encode($webpData);
-        }
-
-        // 2. JIKA DI LOKAL: Simpan ke public/uploads/products/
-        $uploadDir = __DIR__ . '/../../public/uploads/products/';
-        if (!is_dir($uploadDir)) {
-            @mkdir($uploadDir, 0777, true);
-        }
-
-        $fileName = 'prod_' . uniqid('', true) . '.webp';
-        $targetPath = $uploadDir . $fileName;
-
-        imagewebp($imageResource, $targetPath, 80);
-
-        return '/uploads/products/' . $fileName;
-    }
-
-    /**
-     * Simpan Produk Baru
+     * Simpan Produk Baru (Safe Atomic Flow)
      */
     public function store(): void
     {
-        $name        = trim($_POST['name'] ?? '');
+        $name        = trim((string) ($_POST['name'] ?? ''));
         $price       = (float) ($_POST['price'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
+        $description = trim((string) ($_POST['description'] ?? ''));
+        $stock       = max(0, (int) ($_POST['stock'] ?? 10));
+        
+        $allowedStatuses = ['available', 'reserved', 'sold'];
+        $rawStatus = (string) ($_POST['status'] ?? 'available');
+        $status = in_array($rawStatus, $allowedStatuses, true) ? $rawStatus : 'available';
 
-        if (empty($name) || $price <= 0) {
+        if ($name === '' || $price <= 0) {
             $_SESSION['flash_error'] = 'Nama produk dan harga harus diisi dengan benar!';
             header('Location: /admin/products/create');
             exit;
         }
 
+        $uploadedImage = null;
         try {
-            $image = null;
-            if (!empty($_FILES['image']['name'])) {
-                $image = $this->handleImageUpload($_FILES['image']);
+            // Upload gambar via ProductImageService jika ada berkas yang dikirim
+            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name'])) {
+                $uploadedImage = $this->imageService->handleProductUpload($_FILES['image'], $name);
             }
 
-            $this->productModel->create([
-                'name'        => $name,
-                'price'       => $price,
-                'description' => $description,
-                'image'       => $image
+            $insertSuccess = $this->productModel->create([
+                'name'           => $name,
+                'price'          => $price,
+                'description'    => $description,
+                'image_url'      => $uploadedImage['image_url'] ?? null,
+                'thumbnail_url'  => $uploadedImage['thumbnail_url'] ?? null,
+                'image_path'     => $uploadedImage['image_path'] ?? null,
+                'thumbnail_path' => $uploadedImage['thumbnail_path'] ?? null,
+                'stock'          => $stock,
+                'status'         => $status
             ]);
+
+            if (!$insertSuccess) {
+                throw new \RuntimeException('Gagal menyimpan catatan produk ke database.');
+            }
 
             $_SESSION['flash_success'] = 'Produk berhasil ditambahkan ke katalog!';
             header('Location: /admin/products');
             exit;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            // Rollback Storage jika DB gagal atau terjadi error
+            if ($uploadedImage !== null) {
+                $this->imageService->cleanupStorageFiles(
+                    $uploadedImage['image_path'] ?? null,
+                    $uploadedImage['thumbnail_path'] ?? null
+                );
+            }
+
+            error_log('[ProductController:store] Storage/DB Error: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal menambahkan produk: ' . $e->getMessage();
             header('Location: /admin/products/create');
             exit;
@@ -240,42 +201,86 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Update Produk
+     * Update Produk (Safe Two-Phase Update Flow)
      */
     public function update(): void
     {
         $id          = (int) ($_POST['id'] ?? 0);
-        $name        = trim($_POST['name'] ?? '');
+        $name        = trim((string) ($_POST['name'] ?? ''));
         $price       = (float) ($_POST['price'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
+        $description = trim((string) ($_POST['description'] ?? ''));
+        $stock       = max(0, (int) ($_POST['stock'] ?? 10));
 
-        $product = $this->productModel->find($id);
-        if (!$product) {
+        $allowedStatuses = ['available', 'reserved', 'sold'];
+        $rawStatus = (string) ($_POST['status'] ?? 'available');
+        $status = in_array($rawStatus, $allowedStatuses, true) ? $rawStatus : 'available';
+
+        if ($id <= 0 || $name === '' || $price <= 0) {
+            $_SESSION['flash_error'] = 'Data produk tidak valid!';
+            header('Location: /admin/products');
+            exit;
+        }
+
+        $existing = $this->productModel->find($id);
+        if (!$existing) {
             $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
             header('Location: /admin/products');
             exit;
         }
 
+        $newUpload = null;
         try {
-            $image = $product['image'];
-            if (!empty($_FILES['image']['name'])) {
-                $newImage = $this->handleImageUpload($_FILES['image']);
-                if ($newImage) {
-                    $image = $newImage;
-                }
+            $imageUrl      = $existing['image_url'] ?? null;
+            $thumbnailUrl  = $existing['thumbnail_url'] ?? null;
+            $imagePath     = $existing['image_path'] ?? null;
+            $thumbnailPath = $existing['thumbnail_path'] ?? null;
+
+            // Jika mengunggah gambar baru
+            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name'])) {
+                $newUpload     = $this->imageService->handleProductUpload($_FILES['image'], $name);
+                $imageUrl      = $newUpload['image_url'];
+                $thumbnailUrl  = $newUpload['thumbnail_url'];
+                $imagePath     = $newUpload['image_path'];
+                $thumbnailPath = $newUpload['thumbnail_path'];
             }
 
-            $this->productModel->update($id, [
-                'name'        => $name,
-                'price'       => $price,
-                'description' => $description,
-                'image'       => $image
+            $updateSuccess = $this->productModel->update($id, [
+                'name'           => $name,
+                'price'          => $price,
+                'description'    => $description,
+                'image_url'      => $imageUrl,
+                'thumbnail_url'  => $thumbnailUrl,
+                'image_path'     => $imagePath,
+                'thumbnail_path' => $thumbnailPath,
+                'stock'          => $stock,
+                'status'         => $status
             ]);
+
+            if (!$updateSuccess) {
+                throw new \RuntimeException('Gagal memperbarui catatan database.');
+            }
+
+            // Jika DB update berhasil dan ada gambar baru, hapus gambar lama dari Storage
+            if ($newUpload !== null) {
+                $this->imageService->cleanupStorageFiles(
+                    $existing['image_path'] ?? null,
+                    $existing['thumbnail_path'] ?? null
+                );
+            }
 
             $_SESSION['flash_success'] = 'Produk berhasil diperbarui!';
             header('Location: /admin/products');
             exit;
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
+            // Jika update gagal, bersihkan file baru dan pertahankan file lama
+            if ($newUpload !== null) {
+                $this->imageService->cleanupStorageFiles(
+                    $newUpload['image_path'] ?? null,
+                    $newUpload['thumbnail_path'] ?? null
+                );
+            }
+
+            error_log('[ProductController:update] Storage/DB Error: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal memperbarui produk: ' . $e->getMessage();
             header('Location: /admin/products/edit?id=' . $id);
             exit;
@@ -283,16 +288,44 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Hapus Produk
+     * Hapus Produk (Database Delete -> Storage Cleanup -> Audit Log)
      */
     public function delete(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
+        $product = $this->productModel->find($id);
+
+        if (!$product) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
+            header('Location: /admin/products');
+            exit;
+        }
+
+        $imagePath = $product['image_path'] ?? null;
+        $thumbnailPath = $product['thumbnail_path'] ?? null;
 
         try {
-            $this->productModel->delete($id);
-            $_SESSION['flash_success'] = 'Produk berhasil dihapus!';
-        } catch (\Throwable $e) {
+            // 1. Hapus record DB terlebih dahulu
+            $dbDeleted = $this->productModel->delete($id);
+            if (!$dbDeleted) {
+                throw new \RuntimeException('Gagal menghapus data produk dari database.');
+            }
+
+            // 2. Hapus objek dari Supabase Storage
+            $storageCleaned = $this->imageService->cleanupStorageFiles($imagePath, $thumbnailPath);
+            if (!$storageCleaned) {
+                error_log(sprintf(
+                    '[CRITICAL AUDIT] Product ID %d deleted from DB, but failed to delete Storage objects: main=%s, thumb=%s',
+                    $id,
+                    (string) $imagePath,
+                    (string) $thumbnailPath
+                ));
+                $_SESSION['flash_success'] = 'Produk dihapus (Catatan audit log dibuat untuk rekonsiliasi storage).';
+            } else {
+                $_SESSION['flash_success'] = 'Produk dan gambar berhasil dihapus!';
+            }
+        } catch (Throwable $e) {
+            error_log('[ProductController:delete] Error: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal menghapus produk: ' . $e->getMessage();
         }
 

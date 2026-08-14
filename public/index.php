@@ -18,22 +18,39 @@ $router = new router();
 $request = new request();
 
 // ------------------------------------------------------------------
-// PENCATAT KUNJUNGAN TOKO (Otomatis Buat Tabel & Tambah Visitor)
+// PENCATAT KUNJUNGAN TOKO (Support PostgreSQL Supabase & MySQL)
 // ------------------------------------------------------------------
 $uri = $_SERVER['REQUEST_URI'] ?? '/';
 if ($uri === '/' || $uri === '/index.php') {
     try {
         $db = database::getconnection();
-        $db->exec("
-            CREATE TABLE IF NOT EXISTS visitor_stats (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                type VARCHAR(50) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        ");
-        $db->exec("INSERT INTO visitor_stats (type) VALUES ('visitor')");
+        $driver = $db->getAttribute(\PDO::ATTR_DRIVER_NAME);
+
+        if ($driver === 'pgsql') {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS visitor_stats (
+                    id SERIAL PRIMARY KEY,
+                    type VARCHAR(50) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
+        } else {
+            $db->exec("
+                CREATE TABLE IF NOT EXISTS visitor_stats (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    type VARCHAR(50) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ");
+        }
+
+        // Catat kunjungan hanya jika sesi baru (menghindari duplikasi saat refresh)
+        if (empty($_SESSION['visited_store'])) {
+            $_SESSION['visited_store'] = true;
+            $db->exec("INSERT INTO visitor_stats (type) VALUES ('visitor')");
+        }
     } catch (\Throwable $e) {
-        // Abaikan jika database offline
+        error_log('[VisitorTracker] Error: ' . $e->getMessage());
     }
 }
 
