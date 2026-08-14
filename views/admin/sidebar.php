@@ -15,6 +15,10 @@
             <li>
                 <a href="/admin/products/create"> Tambah & Unggah Produk</a>
             </li>
+            <li class="menu-title">PENGATURAN</li>
+            <li>
+                <a href="/admin/settings"> Pengaturan Akun</a>
+            </li>
         </ul>
     </nav>
 </aside>
