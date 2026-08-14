@@ -38,7 +38,7 @@ class productcontroller extends basecontroller
             // Default nomor jika error
         }
 
-        // Cari file view home secara otomatis (kompatibel berbagai penamaan folder)
+        // Cari file view home secara otomatis
         $possibleViews = [
             __DIR__ . '/../views/home/index.php',
             __DIR__ . '/../views/Home/index.php',
@@ -53,7 +53,7 @@ class productcontroller extends basecontroller
             }
         }
 
-        die("View halaman home tidak ditemukan. Pastikan file ada di app/views/home/index.php");
+        die("View halaman home tidak ditemukan.");
     }
 
     /**
@@ -114,6 +114,7 @@ class productcontroller extends basecontroller
 
     /**
      * Helper Unggah & Otomatis Konversi Semua Gambar ke Format WEBP
+     * Kompatibel penuh PHP 8.0 - PHP 8.5+
      */
     private function handleImageUpload(array $file): ?string
     {
@@ -121,9 +122,14 @@ class productcontroller extends basecontroller
             return null;
         }
 
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-        $mime = finfo_file($finfo, $file['tmp_name']);
-        finfo_close($finfo);
+        // Cek MIME type dengan aman
+        $mime = '';
+        if (function_exists('mime_content_type')) {
+            $mime = (string) mime_content_type($file['tmp_name']);
+        } elseif (function_exists('finfo_open')) {
+            $finfo = finfo_open(FILEINFO_MIME_TYPE);
+            $mime = (string) finfo_file($finfo, $file['tmp_name']);
+        }
 
         $imageResource = null;
         switch ($mime) {
@@ -147,22 +153,21 @@ class productcontroller extends basecontroller
         }
 
         if (!$imageResource) {
-            throw new \Exception('Gagal memproses gambar. Pastikan file gambar tidak rusak.');
+            throw new \Exception('Gagal memproses file gambar.');
         }
 
         $isVercel = !empty(getenv('VERCEL')) || !empty(getenv('DB_HOST'));
 
-        // 1. JIKA DI VERCEL: Simpan sebagai WebP Base64 Data URL (Kualitas 80%)
+        // 1. JIKA DI VERCEL (Serverless): Simpan sebagai WebP Base64 Data URL
         if ($isVercel) {
             ob_start();
             imagewebp($imageResource, null, 80);
             $webpData = ob_get_clean();
-            imagedestroy($imageResource);
 
             return 'data:image/webp;base64,' . base64_encode($webpData);
         }
 
-        // 2. JIKA DI LOKAL: Simpan file .webp di public/uploads/products/
+        // 2. JIKA DI LOKAL: Simpan ke public/uploads/products/
         $uploadDir = __DIR__ . '/../../public/uploads/products/';
         if (!is_dir($uploadDir)) {
             @mkdir($uploadDir, 0777, true);
@@ -172,7 +177,6 @@ class productcontroller extends basecontroller
         $targetPath = $uploadDir . $fileName;
 
         imagewebp($imageResource, $targetPath, 80);
-        imagedestroy($imageResource);
 
         return '/uploads/products/' . $fileName;
     }
