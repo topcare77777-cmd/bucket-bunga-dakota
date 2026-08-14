@@ -8,23 +8,6 @@ use app\core\database;
 class authcontroller extends basecontroller
 {
     /**
-     * Pastikan tabel admins siap digunakan
-     */
-    private function ensureAdminTableExists(\PDO $db): void
-    {
-        $db->exec("
-            CREATE TABLE IF NOT EXISTS admins (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                username VARCHAR(100) NOT NULL UNIQUE,
-                password VARCHAR(255) NOT NULL,
-                phone VARCHAR(30) NULL DEFAULT '',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        ");
-    }
-
-    /**
      * Tampilkan Halaman Login
      */
     public function showlogin(): void
@@ -41,7 +24,7 @@ class authcontroller extends basecontroller
     }
 
     /**
-     * Proses Login Admin (Dengan Smart Hash & Default Fallback)
+     * Proses Login Admin (Mendukung PostgreSQL & MySQL)
      */
     public function login(): void
     {
@@ -56,7 +39,6 @@ class authcontroller extends basecontroller
 
         try {
             $db = database::getconnection();
-            $this->ensureAdminTableExists($db);
 
             $stmt = $db->prepare("SELECT * FROM admins WHERE username = :username LIMIT 1");
             $stmt->execute(['username' => $username]);
@@ -65,14 +47,13 @@ class authcontroller extends basecontroller
             $loginSuccess = false;
 
             if ($admin) {
-                // 1. Cek dengan hash bcrypt standar
+                // 1. Verifikasi dengan enkripsi Bcrypt
                 if (password_verify($password, $admin['password'])) {
                     $loginSuccess = true;
-                }
-                // 2. Fallback darurat jika password di database belum di-hash / plaintext
+                } 
+                // 2. Fallback jika akun default admin / admin123
                 elseif ($admin['password'] === $password || ($username === 'admin' && $password === 'admin123')) {
                     $loginSuccess = true;
-                    // Perbaiki langsung hash di database
                     $newHash = password_hash($password, PASSWORD_BCRYPT);
                     $db->prepare("UPDATE admins SET password = :pass WHERE id = :id")->execute([
                         'pass' => $newHash,
@@ -80,24 +61,24 @@ class authcontroller extends basecontroller
                     ]);
                 }
             } else {
-                // 3. Jika tabel admins kosong, buatkan akun default otomatis saat login 'admin' & 'admin123'
+                // Jika data admin belum ada di database, otomatis buatkan 1 akun pertama
                 if ($username === 'admin' && $password === 'admin123') {
                     $newHash = password_hash('admin123', PASSWORD_BCRYPT);
                     $db->prepare("INSERT INTO admins (username, password, phone) VALUES ('admin', :pass, '081234567890')")->execute([
                         'pass' => $newHash
                     ]);
-                    $admin = [
-                        'id' => (int)$db->lastInsertId(),
-                        'username' => 'admin'
-                    ];
+                    
+                    $checkStmt = $db->prepare("SELECT * FROM admins WHERE username = 'admin' LIMIT 1");
+                    $checkStmt->execute();
+                    $admin = $checkStmt->fetch(\PDO::FETCH_ASSOC);
                     $loginSuccess = true;
                 }
             }
 
-            if ($loginSuccess) {
+            if ($loginSuccess && $admin) {
                 $_SESSION['is_admin'] = true;
-                $_SESSION['admin_id'] = $admin['id'] ?? 1;
-                $_SESSION['admin_username'] = $admin['username'] ?? $username;
+                $_SESSION['admin_id'] = $admin['id'];
+                $_SESSION['admin_username'] = $admin['username'];
                 header('Location: /admin/dashboard');
                 exit;
             }
@@ -129,12 +110,10 @@ class authcontroller extends basecontroller
     public function showChangeContact(): void
     {
         $currentPhone = '';
-
         try {
             $db = database::getconnection();
-            $this->ensureAdminTableExists($db);
-
             $adminId = $_SESSION['admin_id'] ?? null;
+            
             if ($adminId) {
                 $stmt = $db->prepare("SELECT phone FROM admins WHERE id = :id LIMIT 1");
                 $stmt->execute(['id' => $adminId]);
@@ -170,22 +149,14 @@ class authcontroller extends basecontroller
 
         try {
             $db = database::getconnection();
-            $this->ensureAdminTableExists($db);
-
             $adminId = $_SESSION['admin_id'] ?? null;
 
-            $count = (int) $db->query("SELECT COUNT(*) FROM admins")->fetchColumn();
-            if ($count === 0) {
-                $defaultPass = password_hash('admin123', PASSWORD_BCRYPT);
-                $db->prepare("INSERT INTO admins (username, password, phone) VALUES ('admin', ?, ?)")->execute([$defaultPass, $phone]);
+            if ($adminId) {
+                $stmt = $db->prepare("UPDATE admins SET phone = :phone WHERE id = :id");
+                $stmt->execute(['phone' => $phone, 'id' => $adminId]);
             } else {
-                if ($adminId) {
-                    $stmt = $db->prepare("UPDATE admins SET phone = :phone WHERE id = :id");
-                    $stmt->execute(['phone' => $phone, 'id' => $adminId]);
-                } else {
-                    $stmt = $db->prepare("UPDATE admins SET phone = :phone ORDER BY id ASC LIMIT 1");
-                    $stmt->execute(['phone' => $phone]);
-                }
+                $stmt = $db->prepare("UPDATE admins SET phone = :phone WHERE id = (SELECT id FROM admins ORDER BY id ASC LIMIT 1)");
+                $stmt->execute(['phone' => $phone]);
             }
 
             $_SESSION['flash_success'] = 'Nomor kontak WhatsApp berhasil diperbarui!';
@@ -232,9 +203,8 @@ class authcontroller extends basecontroller
 
         try {
             $db = database::getconnection();
-            $this->ensureAdminTableExists($db);
-
             $adminId = $_SESSION['admin_id'] ?? null;
+            
             if ($adminId) {
                 $stmt = $db->prepare("SELECT * FROM admins WHERE id = :id LIMIT 1");
                 $stmt->execute(['id' => $adminId]);
@@ -243,9 +213,8 @@ class authcontroller extends basecontroller
             }
 
             $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
-
-            // Cek password lama (mendukung hash bcrypt & fallback plaintext)
             $oldValid = false;
+
             if ($admin) {
                 if (password_verify($oldPassword, $admin['password']) || $admin['password'] === $oldPassword) {
                     $oldValid = true;
@@ -262,7 +231,6 @@ class authcontroller extends basecontroller
             $updateStmt = $db->prepare("UPDATE admins SET password = :password WHERE id = :id");
             $updateStmt->execute(['password' => $newHash, 'id' => $admin['id']]);
 
-            // SETELAH BERHASIL -> LANGSUNG MENUJU DASHBOARD ADMIN
             $_SESSION['flash_success'] = 'Password berhasil diperbarui!';
             header('Location: /admin/dashboard');
             exit;
