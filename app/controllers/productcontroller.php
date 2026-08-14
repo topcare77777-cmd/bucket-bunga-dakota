@@ -35,10 +35,25 @@ class productcontroller extends basecontroller
                 $adminPhone = $admin['phone'];
             }
         } catch (\Throwable $e) {
-            // Gunakan nomor default jika error
+            // Default nomor jika error
         }
 
-        require_once __DIR__ . '/../views/home/index.php';
+        // Cari file view home secara otomatis (kompatibel berbagai penamaan folder)
+        $possibleViews = [
+            __DIR__ . '/../views/home/index.php',
+            __DIR__ . '/../views/Home/index.php',
+            __DIR__ . '/../views/home.php',
+            __DIR__ . '/../views/index.php'
+        ];
+
+        foreach ($possibleViews as $viewFile) {
+            if (file_exists($viewFile)) {
+                require_once $viewFile;
+                return;
+            }
+        }
+
+        die("View halaman home tidak ditemukan. Pastikan file ada di app/views/home/index.php");
     }
 
     /**
@@ -99,7 +114,6 @@ class productcontroller extends basecontroller
 
     /**
      * Helper Unggah & Otomatis Konversi Semua Gambar ke Format WEBP
-     * Mengompresi gambar dan mengubahnya ke WebP Base64 (Vercel) atau file .webp (Lokal)
      */
     private function handleImageUpload(array $file): ?string
     {
@@ -111,7 +125,6 @@ class productcontroller extends basecontroller
         $mime = finfo_file($finfo, $file['tmp_name']);
         finfo_close($finfo);
 
-        // Buat resource gambar GD berdasarkan tipe file input
         $imageResource = null;
         switch ($mime) {
             case 'image/jpeg':
@@ -130,7 +143,7 @@ class productcontroller extends basecontroller
                 $imageResource = @imagecreatefromwebp($file['tmp_name']);
                 break;
             default:
-                throw new \Exception('Format file tidak didukung. Harap unggah foto dengan format JPG, PNG, atau WEBP.');
+                throw new \Exception('Format file tidak didukung. Harap unggah format JPG, PNG, atau WEBP.');
         }
 
         if (!$imageResource) {
@@ -139,7 +152,7 @@ class productcontroller extends basecontroller
 
         $isVercel = !empty(getenv('VERCEL')) || !empty(getenv('DB_HOST'));
 
-        // 1. JIKA DI VERCEL (Serverless): Konversi langsung ke WebP Base64 Data URL (Kualitas 80%)
+        // 1. JIKA DI VERCEL: Simpan sebagai WebP Base64 Data URL (Kualitas 80%)
         if ($isVercel) {
             ob_start();
             imagewebp($imageResource, null, 80);
@@ -149,7 +162,7 @@ class productcontroller extends basecontroller
             return 'data:image/webp;base64,' . base64_encode($webpData);
         }
 
-        // 2. JIKA DI LOKAL LAPTOP: Simpan sebagai file fisik .webp
+        // 2. JIKA DI LOKAL: Simpan file .webp di public/uploads/products/
         $uploadDir = __DIR__ . '/../../public/uploads/products/';
         if (!is_dir($uploadDir)) {
             @mkdir($uploadDir, 0777, true);
@@ -165,7 +178,7 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Simpan Produk Baru ke Database
+     * Simpan Produk Baru
      */
     public function store(): void
     {
@@ -223,7 +236,7 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Update Data Produk
+     * Update Produk
      */
     public function update(): void
     {
@@ -266,7 +279,7 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Hapus Produk dari Database
+     * Hapus Produk
      */
     public function delete(): void
     {
