@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌸</text></svg>">
-    <title>Ganti Password - Dakota Admin</title>
+    <title>Ganti Kontak - Dakota Admin</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { display: flex; min-height: 100vh; background-color: #f8fafc; color: #334155; }
@@ -23,7 +23,7 @@
         .form-group { margin-bottom: 1.25rem; }
         .form-group label { display: block; font-size: 0.875rem; font-weight: 600; color: #1e293b; margin-bottom: 0.5rem; }
         .form-group input { width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; }
-        .btn-submit { background: #0f172a; color: #ffffff; padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
+        .btn-submit { background: #0284c7; color: #ffffff; padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.95rem; }
         .alert-success { background: #def7ec; color: #03543f; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.25rem; font-size: 0.9rem; }
         .alert-error { background: #fde8e8; color: #9b1c1c; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 1.25rem; font-size: 0.9rem; }
     </style>
@@ -39,8 +39,8 @@
                 <li><a href="/admin/products">🌸 Daftar Produk</a></li>
                 <li><a href="/admin/products/create">➕ Tambah & Unggah Produk</a></li>
                 <li class="menu-title">PENGATURAN AKUN</li>
-                <li><a href="/admin/change-contact">📱 Ganti Kontak HP</a></li>
-                <li><a href="/admin/change-password" class="active">🔒 Ganti Password</a></li>
+                <li><a href="/admin/change-contact" class="active">📱 Ganti Kontak HP</a></li>
+                <li><a href="/admin/change-password">🔒 Ganti Password</a></li>
                 <li class="menu-title">AKSES UTAMA</li>
                 <li><a href="/" target="_blank">🛍️ Lihat Toko Pembeli</a></li>
             </ul>
@@ -52,8 +52,8 @@
 
     <main class="admin-main">
         <div style="margin-bottom: 1.5rem;">
-            <span style="color: #64748b; font-size: 0.875rem;">Keamanan Akun</span>
-            <h1 style="font-size: 1.5rem; font-weight: 700; color: #0f172a; margin-top: 0.25rem;">🔒 Ganti Password Admin</h1>
+            <span style="color: #64748b; font-size: 0.875rem;">Pengaturan Toko</span>
+            <h1 style="font-size: 1.5rem; font-weight: 700; color: #0f172a; margin-top: 0.25rem;">📱 Ganti Nomor Kontak WhatsApp</h1>
         </div>
 
         <div class="form-card">
@@ -65,23 +65,14 @@
                 <div class="alert-error"><?= htmlspecialchars((string)$error) ?></div>
             <?php endif; ?>
 
-            <form action="/admin/change-password" method="POST">
+            <form action="/admin/change-contact" method="POST">
                 <div class="form-group">
-                    <label>Password Saat Ini</label>
-                    <input type="password" name="old_password" required placeholder="Masukkan password lama">
+                    <label>Nomor WhatsApp / HP Toko</label>
+                    <input type="text" name="phone" value="<?= htmlspecialchars((string)($currentPhone ?? '')) ?>" placeholder="Contoh: 081234567890" required>
+                    <small style="color: #64748b; font-size: 0.8rem; display: block; margin-top: 0.35rem;">Nomor tujuan untuk menerima pesanan chat WhatsApp dari pembeli.</small>
                 </div>
 
-                <div class="form-group">
-                    <label>Password Baru</label>
-                    <input type="password" name="new_password" minlength="6" required placeholder="Minimal 6 karakter">
-                </div>
-
-                <div class="form-group">
-                    <label>Konfirmasi Password Baru</label>
-                    <input type="password" name="confirm_password" minlength="6" required placeholder="Ulangi password baru">
-                </div>
-
-                <button type="submit" class="btn-submit">Perbarui Password</button>
+                <button type="submit" class="btn-submit">Simpan Nomor Kontak</button>
             </form>
         </div>
     </main>
