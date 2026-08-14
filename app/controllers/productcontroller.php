@@ -3,161 +3,227 @@ declare(strict_types=1);
 
 namespace app\controllers;
 
+use app\models\product;
 use app\core\database;
 
 class productcontroller extends basecontroller
 {
+    private product $productModel;
+
+    public function __construct()
+    {
+        $this->productModel = new product();
+    }
+
     /**
-     * Tampilkan Halaman Depan Toko (Katalog untuk Pembeli)
+     * Tampilkan Halaman Utama Toko Publik
      */
     public function home(): void
     {
-        $products = [];
-        $adminPhone = '081234567890';
+        try {
+            $products = $this->productModel->getAll();
+        } catch (\Throwable $e) {
+            $products = [];
+        }
 
+        $adminPhone = '081234567890';
         try {
             $db = database::getconnection();
-            
-            // Ambil daftar produk
-            $stmt = $db->query("SELECT * FROM products ORDER BY id DESC");
-            $products = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
-
-            // Ambil nomor WA admin toko
-            $phoneStmt = $db->query("SELECT phone FROM admins ORDER BY id ASC LIMIT 1");
-            $admin = $phoneStmt->fetch(\PDO::FETCH_ASSOC);
+            $stmt = $db->query("SELECT phone FROM admins ORDER BY id ASC LIMIT 1");
+            $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
             if (!empty($admin['phone'])) {
                 $adminPhone = $admin['phone'];
             }
         } catch (\Throwable $e) {
-            // Abaikan jika database baru
+            // Gunakan nomor default jika error
         }
 
-        require_once __DIR__ . '/../views/home.php';
+        require_once __DIR__ . '/../views/home/index.php';
     }
 
     /**
-     * Tampilkan Dashboard Admin Panel
+     * Tampilkan Dashboard Admin
      */
     public function dashboard(): void
     {
-        $totalProducts = 0;
+        try {
+            $products = $this->productModel->getAll();
+        } catch (\Throwable $e) {
+            $products = [];
+        }
+
         $totalVisitors = 0;
-        $waClicks = 0;
+        $totalOrders = 0;
 
         try {
             $db = database::getconnection();
-
-            // 1. Hitung Total Produk
-            $stmt = $db->query("SELECT COUNT(*) FROM products");
-            $totalProducts = (int) $stmt->fetchColumn();
-
-            // 2. Hitung Pengunjung Toko Asli
-            $stmt = $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'visitor'");
-            $totalVisitors = (int) $stmt->fetchColumn();
-
-            // 3. Hitung Klik Pesan WA
-            $stmt = $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'wa_click'");
-            $waClicks = (int) $stmt->fetchColumn();
+            $totalVisitors = (int) $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'visitor'")->fetchColumn();
+            $totalOrders   = (int) $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'order'")->fetchColumn();
         } catch (\Throwable $e) {
-            // Tangani jika tabel belum dibuat
+            // Database offline fallback
         }
+
+        $totalProducts = count($products);
 
         require_once __DIR__ . '/../views/admin/dashboard.php';
     }
 
     /**
-     * Daftar Produk di Admin
+     * Tampilkan Daftar Produk di Panel Admin
      */
     public function index(): void
     {
-        $products = [];
         try {
-            $db = database::getconnection();
-            $stmt = $db->query("SELECT * FROM products ORDER BY id DESC");
-            $products = $stmt->fetchAll(\PDO::FETCH_ASSOC) ?: [];
+            $products = $this->productModel->getAll();
         } catch (\Throwable $e) {
-            // Error handling
+            $products = [];
         }
+
+        $success = $_SESSION['flash_success'] ?? null;
+        $error   = $_SESSION['flash_error'] ?? null;
+        unset($_SESSION['flash_success'], $_SESSION['flash_error']);
 
         require_once __DIR__ . '/../views/admin/products/index.php';
     }
 
     /**
-     * Form Tambah Produk
+     * Halaman Tambah Produk Baru
      */
     public function create(): void
     {
+        $error = $_SESSION['flash_error'] ?? null;
+        unset($_SESSION['flash_error']);
+
         require_once __DIR__ . '/../views/admin/products/create.php';
     }
 
     /**
-     * Simpan Produk Baru
+     * Helper Unggah & Otomatis Konversi Semua Gambar ke Format WEBP
+     * Mengompresi gambar dan mengubahnya ke WebP Base64 (Vercel) atau file .webp (Lokal)
+     */
+    private function handleImageUpload(array $file): ?string
+    {
+        if (empty($file['name']) || empty($file['tmp_name']) || $file['error'] !== UPLOAD_ERR_OK) {
+            return null;
+        }
+
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mime = finfo_file($finfo, $file['tmp_name']);
+        finfo_close($finfo);
+
+        // Buat resource gambar GD berdasarkan tipe file input
+        $imageResource = null;
+        switch ($mime) {
+            case 'image/jpeg':
+            case 'image/jpg':
+                $imageResource = @imagecreatefromjpeg($file['tmp_name']);
+                break;
+            case 'image/png':
+                $imageResource = @imagecreatefrompng($file['tmp_name']);
+                if ($imageResource) {
+                    imagepalettetotruecolor($imageResource);
+                    imagealphablending($imageResource, true);
+                    imagesavealpha($imageResource, true);
+                }
+                break;
+            case 'image/webp':
+                $imageResource = @imagecreatefromwebp($file['tmp_name']);
+                break;
+            default:
+                throw new \Exception('Format file tidak didukung. Harap unggah foto dengan format JPG, PNG, atau WEBP.');
+        }
+
+        if (!$imageResource) {
+            throw new \Exception('Gagal memproses gambar. Pastikan file gambar tidak rusak.');
+        }
+
+        $isVercel = !empty(getenv('VERCEL')) || !empty(getenv('DB_HOST'));
+
+        // 1. JIKA DI VERCEL (Serverless): Konversi langsung ke WebP Base64 Data URL (Kualitas 80%)
+        if ($isVercel) {
+            ob_start();
+            imagewebp($imageResource, null, 80);
+            $webpData = ob_get_clean();
+            imagedestroy($imageResource);
+
+            return 'data:image/webp;base64,' . base64_encode($webpData);
+        }
+
+        // 2. JIKA DI LOKAL LAPTOP: Simpan sebagai file fisik .webp
+        $uploadDir = __DIR__ . '/../../public/uploads/products/';
+        if (!is_dir($uploadDir)) {
+            @mkdir($uploadDir, 0777, true);
+        }
+
+        $fileName = 'prod_' . uniqid('', true) . '.webp';
+        $targetPath = $uploadDir . $fileName;
+
+        imagewebp($imageResource, $targetPath, 80);
+        imagedestroy($imageResource);
+
+        return '/uploads/products/' . $fileName;
+    }
+
+    /**
+     * Simpan Produk Baru ke Database
      */
     public function store(): void
     {
         $name        = trim($_POST['name'] ?? '');
         $price       = (float) ($_POST['price'] ?? 0);
         $description = trim($_POST['description'] ?? '');
-        $imagePath   = '';
 
-        if (!empty($_FILES['image']['name'])) {
-            $uploadDir = __DIR__ . '/../../public/uploads/products/';
-            if (!is_dir($uploadDir)) {
-                mkdir($uploadDir, 0777, true);
-            }
-
-            $fileName = uniqid('prod_', true) . '.' . pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-            $targetPath = $uploadDir . $fileName;
-
-            if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
-                $imagePath = '/uploads/products/' . $fileName;
-            }
+        if (empty($name) || $price <= 0) {
+            $_SESSION['flash_error'] = 'Nama produk dan harga harus diisi dengan benar!';
+            header('Location: /admin/products/create');
+            exit;
         }
 
         try {
-            $db = database::getconnection();
-            $stmt = $db->prepare("INSERT INTO products (name, price, description, image) VALUES (:name, :price, :description, :image)");
-            $stmt->execute([
+            $image = null;
+            if (!empty($_FILES['image']['name'])) {
+                $image = $this->handleImageUpload($_FILES['image']);
+            }
+
+            $this->productModel->create([
                 'name'        => $name,
                 'price'       => $price,
                 'description' => $description,
-                'image'       => $imagePath
+                'image'       => $image
             ]);
-        } catch (\Throwable $e) {
-            // Error handling
-        }
 
-        header('Location: /admin/products');
-        exit;
+            $_SESSION['flash_success'] = 'Produk berhasil ditambahkan ke katalog!';
+            header('Location: /admin/products');
+            exit;
+        } catch (\Throwable $e) {
+            $_SESSION['flash_error'] = 'Gagal menambahkan produk: ' . $e->getMessage();
+            header('Location: /admin/products/create');
+            exit;
+        }
     }
 
     /**
-     * Form Edit Produk
+     * Halaman Edit Produk
      */
     public function edit(): void
     {
         $id = (int) ($_GET['id'] ?? 0);
-        $product = null;
-
-        try {
-            $db = database::getconnection();
-            $stmt = $db->prepare("SELECT * FROM products WHERE id = :id LIMIT 1");
-            $stmt->execute(['id' => $id]);
-            $product = $stmt->fetch(\PDO::FETCH_ASSOC);
-        } catch (\Throwable $e) {
-            // Error handling
-        }
+        $product = $this->productModel->find($id);
 
         if (!$product) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
             header('Location: /admin/products');
             exit;
         }
+
+        $error = $_SESSION['flash_error'] ?? null;
+        unset($_SESSION['flash_error']);
 
         require_once __DIR__ . '/../views/admin/products/edit.php';
     }
 
     /**
-     * Update Produk
+     * Update Data Produk
      */
     public function update(): void
     {
@@ -166,55 +232,51 @@ class productcontroller extends basecontroller
         $price       = (float) ($_POST['price'] ?? 0);
         $description = trim($_POST['description'] ?? '');
 
-        try {
-            $db = database::getconnection();
-            
-            if (!empty($_FILES['image']['name'])) {
-                $uploadDir = __DIR__ . '/../../public/uploads/products/';
-                $fileName = uniqid('prod_', true) . '.' . pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-                $targetPath = $uploadDir . $fileName;
-
-                if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
-                    $imagePath = '/uploads/products/' . $fileName;
-                    $stmt = $db->prepare("UPDATE products SET name = :name, price = :price, description = :description, image = :image WHERE id = :id");
-                    $stmt->execute([
-                        'name'        => $name,
-                        'price'       => $price,
-                        'description' => $description,
-                        'image'       => $imagePath,
-                        'id'          => $id
-                    ]);
-                }
-            } else {
-                $stmt = $db->prepare("UPDATE products SET name = :name, price = :price, description = :description WHERE id = :id");
-                $stmt->execute([
-                    'name'        => $name,
-                    'price'       => $price,
-                    'description' => $description,
-                    'id'          => $id
-                ]);
-            }
-        } catch (\Throwable $e) {
-            // Error handling
+        $product = $this->productModel->find($id);
+        if (!$product) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
+            header('Location: /admin/products');
+            exit;
         }
 
-        header('Location: /admin/products');
-        exit;
+        try {
+            $image = $product['image'];
+            if (!empty($_FILES['image']['name'])) {
+                $newImage = $this->handleImageUpload($_FILES['image']);
+                if ($newImage) {
+                    $image = $newImage;
+                }
+            }
+
+            $this->productModel->update($id, [
+                'name'        => $name,
+                'price'       => $price,
+                'description' => $description,
+                'image'       => $image
+            ]);
+
+            $_SESSION['flash_success'] = 'Produk berhasil diperbarui!';
+            header('Location: /admin/products');
+            exit;
+        } catch (\Throwable $e) {
+            $_SESSION['flash_error'] = 'Gagal memperbarui produk: ' . $e->getMessage();
+            header('Location: /admin/products/edit?id=' . $id);
+            exit;
+        }
     }
 
     /**
-     * Hapus Produk
+     * Hapus Produk dari Database
      */
     public function delete(): void
     {
         $id = (int) ($_POST['id'] ?? 0);
 
         try {
-            $db = database::getconnection();
-            $stmt = $db->prepare("DELETE FROM products WHERE id = :id");
-            $stmt->execute(['id' => $id]);
+            $this->productModel->delete($id);
+            $_SESSION['flash_success'] = 'Produk berhasil dihapus!';
         } catch (\Throwable $e) {
-            // Error handling
+            $_SESSION['flash_error'] = 'Gagal menghapus produk: ' . $e->getMessage();
         }
 
         header('Location: /admin/products');
