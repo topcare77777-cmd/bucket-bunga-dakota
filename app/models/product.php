@@ -43,24 +43,42 @@ class product extends basemodel
     }
 
     /**
-     * Tambah produk baru dengan URL dan Path Supabase Storage
+     * Tambah produk baru dengan generate unique slug otomatis server-side
      */
     public function create(array $data): bool
     {
+        $name = trim((string) ($data['name'] ?? ''));
+        $slug = $this->generateUniqueSlug($name);
+
         $stmt = $this->db->prepare("
             INSERT INTO {$this->table} (
-                name, price, description, 
-                image_url, thumbnail_url, image_path, thumbnail_path, 
-                stock, status
+                name,
+                slug,
+                price,
+                description,
+                image_url,
+                thumbnail_url,
+                image_path,
+                thumbnail_path,
+                stock,
+                status
             ) VALUES (
-                :name, :price, :description, 
-                :image_url, :thumbnail_url, :image_path, :thumbnail_path, 
-                :stock, :status
+                :name,
+                :slug,
+                :price,
+                :description,
+                :image_url,
+                :thumbnail_url,
+                :image_path,
+                :thumbnail_path,
+                :stock,
+                :status
             )
         ");
 
         return $stmt->execute([
-            'name'           => $data['name'],
+            'name'           => $name,
+            'slug'           => $slug,
             'price'          => $data['price'],
             'description'    => $data['description'] ?? '',
             'image_url'      => $data['image_url'] ?? null,
@@ -116,11 +134,58 @@ class product extends basemodel
     }
 
     /**
+     * Membuat base slug dari string nama produk
+     */
+    private function normalizeSlug(string $name): string
+    {
+        $slug = strtolower(trim($name));
+        $slug = (string) preg_replace('/[^a-z0-9]+/i', '-', $slug);
+        $slug = trim($slug, '-');
+
+        if ($slug === '') {
+            $slug = 'produk';
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Memastikan slug unik di database dengan memeriksa eksistensinya menggunakan prepared statement
+     */
+    private function generateUniqueSlug(string $name): string
+    {
+        $baseSlug = $this->normalizeSlug($name);
+        $slug = $baseSlug;
+        $counter = 2;
+
+        while ($this->slugExists($slug)) {
+            $slug = $baseSlug . '-' . $counter;
+            $counter++;
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Cek apakah slug sudah ada di database
+     */
+    private function slugExists(string $slug): bool
+    {
+        try {
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM {$this->table} WHERE slug = :slug");
+            $stmt->execute(['slug' => $slug]);
+            return (int) $stmt->fetchColumn() > 0;
+        } catch (\Throwable $e) {
+            return false;
+        }
+    }
+
+    /**
      * Menjamin konsistensi key untuk kompatibilitas view
      */
     private function normalizeRow(array $row): array
     {
-        // Fallback jika ada data legacy 'image'
+        // Fallback kompatibilitas legacy 'image'
         $imageUrl = $row['image_url'] ?? ($row['image'] ?? null);
         $thumbnailUrl = $row['thumbnail_url'] ?? $imageUrl;
 
@@ -130,6 +195,7 @@ class product extends basemodel
         $row['thumbnail_path'] = $row['thumbnail_path'] ?? null;
         $row['stock'] = isset($row['stock']) ? (int) $row['stock'] : 10;
         $row['status'] = $row['status'] ?? 'available';
+        $row['slug'] = $row['slug'] ?? '';
 
         return $row;
     }
