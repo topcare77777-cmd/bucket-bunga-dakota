@@ -5,6 +5,7 @@ namespace app\services;
 
 use app\helpers\imagehelper;
 use Exception;
+use RuntimeException;
 
 class productimageservice
 {
@@ -22,62 +23,64 @@ class productimageservice
      */
     public function handleProductUpload(array $file, string $productName): array
     {
+        error_log('[PRODUCT_TRACE] FILE_RECEIVED - Processing upload for: ' . $productName);
+
         $mime = imagehelper::validateUpload($file);
         $filename = imagehelper::generateSlugFilename($productName);
 
         $mainPath = 'products/' . $filename;
         $thumbPath = 'thumbnails/' . $filename;
 
-        // 1. In-memory WebP processing untuk Main Image (Maks 800x1000)
-        $mainBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 800, 1000, 80);
-
-        // 2. Upload Main Image ke Supabase Storage
-        $mainUploadOk = $this->storageService->uploadFile($mainPath, $mainBinary, 'image/webp');
-        if (!$mainUploadOk) {
-            throw new Exception('Gagal mengunggah foto utama ke Supabase Storage. Periksa status bucket dan kredensial server.');
-        }
-
-        // 3. In-memory WebP processing untuk Thumbnail (Maks 200x250)
         try {
+            // 1. Proses Main Image WebP (Maks 800x1000)
+            error_log('[PRODUCT_TRACE] IMAGE_UPLOAD_STARTED - Main Image');
+            $mainBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 800, 1000, 80);
+
+            // 2. Upload Sequential: Main Image
+            $this->storageService->uploadFile($mainPath, $mainBinary, 'image/webp');
+
+            // 3. Proses Thumbnail WebP (Maks 200x250)
+            error_log('[PRODUCT_TRACE] IMAGE_UPLOAD_STARTED - Thumbnail Image');
             $thumbBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 200, 250, 80);
+
+            // 4. Upload Sequential: Thumbnail
+            $this->storageService->uploadFile($thumbPath, $thumbBinary, 'image/webp');
+
+            error_log('[PRODUCT_TRACE] IMAGE_UPLOAD_SUCCESS - Both files uploaded successfully');
+
+            return [
+                'image_url'      => $this->storageService->getPublicUrl($mainPath),
+                'thumbnail_url'  => $this->storageService->getPublicUrl($thumbPath),
+                'image_path'     => $mainPath,
+                'thumbnail_path' => $thumbPath,
+            ];
+
         } catch (Exception $e) {
-            $this->storageService->deleteFile($mainPath);
-            throw new Exception('Gagal memproses thumbnail: ' . $e->getMessage());
+            error_log('[PRODUCT_TRACE] IMAGE_UPLOAD_FAILED - Error: ' . $e->getMessage());
+            
+            // Clean up potentially orphaned storage files before throwing
+            $this->cleanupStorageFiles($mainPath, $thumbPath);
+            
+            throw new RuntimeException('Gagal mengunggah gambar ke storage. Silakan coba lagi.');
         }
-
-        // 4. Upload Thumbnail ke Supabase Storage
-        $thumbUploadOk = $this->storageService->uploadFile($thumbPath, $thumbBinary, 'image/webp');
-        if (!$thumbUploadOk) {
-            $this->storageService->deleteFile($mainPath);
-            throw new Exception('Gagal mengunggah thumbnail ke Supabase Storage.');
-        }
-
-        return [
-            'image_url'      => $this->storageService->getPublicUrl($mainPath),
-            'thumbnail_url'  => $this->storageService->getPublicUrl($thumbPath),
-            'image_path'     => $mainPath,
-            'thumbnail_path' => $thumbPath,
-        ];
     }
 
     /**
-     * Cleanup sekumpulan file storage (misal ketika DB query gagal)
+     * Cleanup sekumpulan file storage (digunakan saat rollback)
      */
     public function cleanupStorageFiles(?string $mainPath, ?string $thumbPath): bool
     {
         $allSuccess = true;
 
         if (!empty($mainPath)) {
-            $deletedMain = $this->storageService->deleteFile($mainPath);
-            if (!$deletedMain) {
+            if (!$this->storageService->deleteFile($mainPath)) {
                 error_log('[CRITICAL AUDIT] Gagal menghapus storage object: ' . $mainPath);
                 $allSuccess = false;
             }
         }
 
         if (!empty($thumbPath)) {
-            $deletedThumb = $this->storageService->deleteFile($thumbPath);
-            if (!$deletedThumb) {
+            if (!$this->storageService->deleteFile($thumbPath)) {
                 error_log('[CRITICAL AUDIT] Gagal menghapus storage object: ' . $thumbPath);
                 $allSuccess = false;
             }

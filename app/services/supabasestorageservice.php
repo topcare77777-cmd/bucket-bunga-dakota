@@ -16,14 +16,10 @@ class supabasestorageservice
         $this->supabaseUrl = rtrim($supabaseUrl ?? (string) self::env('SUPABASE_URL', ''), '/');
         $this->serviceRoleKey = trim($serviceRoleKey ?? (string) self::env('SUPABASE_SERVICE_ROLE_KEY', ''));
         $this->bucket = trim($bucket ?? (string) self::env('SUPABASE_STORAGE_BUCKET', 'bucket-bunga-dakota'));
-
-        if ($this->supabaseUrl === '' || $this->serviceRoleKey === '') {
-            error_log('[SupabaseStorageService] Warning: SUPABASE_URL atau SUPABASE_SERVICE_ROLE_KEY belum terkonfigurasi di environment.');
-        }
     }
 
     /**
-     * Helper pembaca environment variable multi-sumber
+     * Helper internal untuk membaca environment variable secara berurutan
      */
     private static function env(string $key, ?string $default = null): ?string
     {
@@ -44,20 +40,29 @@ class supabasestorageservice
     }
 
     /**
-     * Upload binary data ke Supabase Storage REST API
+     * Upload binary data secara langsung ke Supabase Storage (Mendukung WebP)
      */
     public function uploadFile(string $storagePath, string $binaryData, string $contentType = 'image/webp'): bool
     {
+        error_log('[PRODUCT_TRACE] STORAGE_UPLOAD_START');
+
         if ($this->supabaseUrl === '' || $this->serviceRoleKey === '') {
-            throw new RuntimeException('Kredensial Supabase Storage tidak lengkap pada environment server.');
+            error_log('[PRODUCT_TRACE] STORAGE_UPLOAD_FAILED - Credentials not found in environment');
+            throw new RuntimeException('Supabase Storage credentials are not fully configured.');
         }
+
+        error_log('[PRODUCT_TRACE] STORAGE_ENV_READY');
+        error_log('[PRODUCT_TRACE] STORAGE_BUCKET_READY - Bucket: ' . $this->bucket);
 
         $cleanPath = ltrim($storagePath, '/');
         $url = $this->supabaseUrl . '/storage/v1/object/' . $this->bucket . '/' . $cleanPath;
+        
+        error_log('[PRODUCT_TRACE] STORAGE_HTTP_REQUEST - Target: ' . $url);
 
         $ch = curl_init($url);
         if ($ch === false) {
-            throw new RuntimeException('Gagal menginisialisasi cURL untuk upload Supabase Storage.');
+            error_log('[PRODUCT_TRACE] STORAGE_UPLOAD_FAILED - Failed to init cURL');
+            throw new RuntimeException('Failed to initialize cURL for Supabase Storage.');
         }
 
         $headers = [
@@ -80,16 +85,20 @@ class supabasestorageservice
         curl_close($ch);
 
         if ($curlError !== '') {
-            error_log('[SupabaseStorageService] cURL Error upload: ' . $curlError);
-            return false;
+            error_log('[PRODUCT_TRACE] STORAGE_UPLOAD_FAILED - Network cURL Error: ' . $curlError);
+            throw new RuntimeException('Network error during upload to Supabase Storage.');
         }
 
         if ($httpCode >= 200 && $httpCode < 300) {
+            error_log('[PRODUCT_TRACE] STORAGE_UPLOAD_SUCCESS - Object Path: ' . $cleanPath);
             return true;
         }
 
-        error_log(sprintf('[SupabaseStorageService] Upload Failed HTTP %d: %s', $httpCode, (string) $response));
-        return false;
+        // Diagnostic log aman tanpa secret, HTTP respons direkam untuk debugging permission (403, 401, 400, 404)
+        $safeResponse = substr((string)$response, 0, 500);
+        error_log(sprintf('[PRODUCT_TRACE] STORAGE_UPLOAD_FAILED - HTTP %d - Response: %s', $httpCode, $safeResponse));
+
+        throw new RuntimeException('Supabase Storage upload failed. HTTP status: ' . $httpCode);
     }
 
     /**
@@ -98,7 +107,6 @@ class supabasestorageservice
     public function deleteFile(string $storagePath): bool
     {
         if ($this->supabaseUrl === '' || $this->serviceRoleKey === '') {
-            error_log('[SupabaseStorageService] Gagal menghapus file: Kredensial tidak lengkap.');
             return false;
         }
 
@@ -123,19 +131,13 @@ class supabasestorageservice
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $curlError = curl_error($ch);
         curl_close($ch);
-
-        if ($curlError !== '') {
-            error_log('[SupabaseStorageService] cURL Error delete: ' . $curlError);
-            return false;
-        }
 
         return ($httpCode >= 200 && $httpCode < 300);
     }
 
     /**
-     * Dapatkan Public URL permanen
+     * Dapatkan Public URL permanen dari Supabase Storage
      */
     public function getPublicUrl(string $storagePath): string
     {
