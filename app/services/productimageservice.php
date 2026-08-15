@@ -1,11 +1,12 @@
 <?php
+
 declare(strict_types=1);
 
 namespace app\services;
 
 use app\helpers\imagehelper;
-use Exception;
 use RuntimeException;
+use Throwable;
 
 class productimageservice
 {
@@ -18,7 +19,10 @@ class productimageservice
 
     public function handleProductUpload(array $file, string $productName): array
     {
-        error_log('[PRODUCT_TRACE] IMAGE_PIPELINE: Validating and Processing WebP...');
+        error_log(
+            '[PRODUCT_TRACE] IMAGE_PIPELINE: Validating and Processing WebP...'
+        );
+
         $mime = imagehelper::validateUpload($file);
         $filename = imagehelper::generateSlugFilename($productName);
 
@@ -26,39 +30,93 @@ class productimageservice
         $thumbPath = 'thumbnails/' . $filename;
 
         try {
-            $mainBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 800, 1000, 80);
-            
-            error_log('[PRODUCT_TRACE] IMAGE_PIPELINE: Uploading Main Image...');
-            $this->storageService->uploadFile($mainPath, $mainBinary, 'image/webp');
+            $mainBinary = imagehelper::processToWebp(
+                $file['tmp_name'],
+                $mime,
+                800,
+                1000,
+                80
+            );
 
-            error_log('[PRODUCT_TRACE] IMAGE_PIPELINE: Processing & Uploading Thumbnail...');
-            $thumbBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 200, 250, 80);
-            $this->storageService->uploadFile($thumbPath, $thumbBinary, 'image/webp');
+            error_log(
+                '[PRODUCT_TRACE] IMAGE_PIPELINE: Uploading Main Image...'
+            );
 
-            error_log('[PRODUCT_TRACE] IMAGE_PIPELINE: Success. URLs generated.');
+            $this->storageService->uploadFile(
+                $mainPath,
+                $mainBinary,
+                'image/webp'
+            );
+
+            error_log(
+                '[PRODUCT_TRACE] IMAGE_PIPELINE: Processing & Uploading Thumbnail...'
+            );
+
+            $thumbBinary = imagehelper::processToWebp(
+                $file['tmp_name'],
+                $mime,
+                200,
+                250,
+                80
+            );
+
+            $this->storageService->uploadFile(
+                $thumbPath,
+                $thumbBinary,
+                'image/webp'
+            );
+
+            error_log(
+                '[PRODUCT_TRACE] IMAGE_PIPELINE: Success. URLs generated.'
+            );
+
             return [
-                'image_url'      => $this->storageService->getPublicUrl($mainPath),
-                'thumbnail_url'  => $this->storageService->getPublicUrl($thumbPath),
-                'image_path'     => $mainPath,
+                'image_url' => $this->storageService->getPublicUrl(
+                    $mainPath
+                ),
+                'thumbnail_url' => $this->storageService->getPublicUrl(
+                    $thumbPath
+                ),
+                'image_path' => $mainPath,
                 'thumbnail_path' => $thumbPath,
             ];
-
         } catch (Throwable $e) {
-            error_log('[PRODUCT_TRACE] IMAGE_PIPELINE FAILED: ' . $e->getMessage());
-            $this->cleanupStorageFiles($mainPath, $thumbPath);
-            throw new RuntimeException($e->getMessage());
+            error_log(
+                '[PRODUCT_TRACE] IMAGE_PIPELINE FAILED: ' .
+                $e->getMessage()
+            );
+
+            $this->cleanupStorageFiles(
+                $mainPath,
+                $thumbPath
+            );
+
+            throw new RuntimeException(
+                $e->getMessage(),
+                0,
+                $e
+            );
         }
     }
 
-    public function cleanupStorageFiles(?string $mainPath, ?string $thumbPath): bool
-    {
+    public function cleanupStorageFiles(
+        ?string $mainPath,
+        ?string $thumbPath
+    ): bool {
         $allSuccess = true;
+
         if (!empty($mainPath)) {
-            if (!$this->storageService->deleteFile($mainPath)) $allSuccess = false;
+            if (!$this->storageService->deleteFile($mainPath)) {
+                $allSuccess = false;
+            }
         }
+
         if (!empty($thumbPath)) {
-            if (!$this->storageService->deleteFile($thumbPath)) $allSuccess = false;
+            if (!$this->storageService->deleteFile($thumbPath)) {
+                $allSuccess = false;
+            }
         }
+
         return $allSuccess;
     }
 }
