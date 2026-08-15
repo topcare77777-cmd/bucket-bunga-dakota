@@ -1,14 +1,22 @@
 {
-    "builds": [
-        {
-            "src": "api/index.php",
-            "use": "vercel-php"
-        }
-    ],
-    "routes": [
-        {
-            "src": "/(.*)",
-            "dest": "/api/index.php"
-        }
-    ]
+  "builds": [
+    {
+      "src": "api/index.php",
+      "use": "vercel-php"
+    },
+    {
+      "src": "api/env-test.php",
+      "use": "vercel-php"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/env-test",
+      "dest": "/api/env-test.php"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.php"
+    }
+  ]
 }
