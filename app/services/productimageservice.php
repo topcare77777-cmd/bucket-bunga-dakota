@@ -28,16 +28,16 @@ class productimageservice
         $mainPath = 'products/' . $filename;
         $thumbPath = 'thumbnails/' . $filename;
 
-        // 1. Proses Main Image WebP (Maks 800x1000)
+        // 1. In-memory WebP processing untuk Main Image (Maks 800x1000)
         $mainBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 800, 1000, 80);
 
-        // 2. Upload Sequential: Main Image
+        // 2. Upload Main Image ke Supabase Storage
         $mainUploadOk = $this->storageService->uploadFile($mainPath, $mainBinary, 'image/webp');
         if (!$mainUploadOk) {
-            throw new Exception('Gagal mengunggah foto utama ke Supabase Storage.');
+            throw new Exception('Gagal mengunggah foto utama ke Supabase Storage. Periksa status bucket dan kredensial server.');
         }
 
-        // 3. Proses Thumbnail WebP (Maks 200x250)
+        // 3. In-memory WebP processing untuk Thumbnail (Maks 200x250)
         try {
             $thumbBinary = imagehelper::processToWebp($file['tmp_name'], $mime, 200, 250, 80);
         } catch (Exception $e) {
@@ -45,7 +45,7 @@ class productimageservice
             throw new Exception('Gagal memproses thumbnail: ' . $e->getMessage());
         }
 
-        // 4. Upload Sequential: Thumbnail
+        // 4. Upload Thumbnail ke Supabase Storage
         $thumbUploadOk = $this->storageService->uploadFile($thumbPath, $thumbBinary, 'image/webp');
         if (!$thumbUploadOk) {
             $this->storageService->deleteFile($mainPath);
@@ -61,7 +61,7 @@ class productimageservice
     }
 
     /**
-     * Cleanup sekumpulan file storage (misal ketika DB query gagal atau saat hapus produk)
+     * Cleanup sekumpulan file storage (misal ketika DB query gagal)
      */
     public function cleanupStorageFiles(?string $mainPath, ?string $thumbPath): bool
     {

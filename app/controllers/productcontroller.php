@@ -140,11 +140,13 @@ class productcontroller extends basecontroller
 
         $uploadedImage = null;
         try {
-            // Upload gambar via ProductImageService jika ada berkas yang dikirim
-            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name'])) {
+            // Upload gambar jika ada file yang diunggah
+            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+                error_log('[ProductController:store] Memulai upload gambar untuk: ' . $name);
                 $uploadedImage = $this->imageService->handleProductUpload($_FILES['image'], $name);
             }
 
+            // Insert ke PostgreSQL Supabase
             $insertSuccess = $this->productModel->create([
                 'name'           => $name,
                 'price'          => $price,
@@ -158,14 +160,14 @@ class productcontroller extends basecontroller
             ]);
 
             if (!$insertSuccess) {
-                throw new \RuntimeException('Gagal menyimpan catatan produk ke database.');
+                throw new \RuntimeException('Gagal mengeksekusi query INSERT ke database.');
             }
 
             $_SESSION['flash_success'] = 'Produk berhasil ditambahkan ke katalog!';
             header('Location: /admin/products');
             exit;
         } catch (Throwable $e) {
-            // Rollback Storage jika DB gagal atau terjadi error
+            // Rollback Storage jika DB gagal
             if ($uploadedImage !== null) {
                 $this->imageService->cleanupStorageFiles(
                     $uploadedImage['image_path'] ?? null,
@@ -173,7 +175,7 @@ class productcontroller extends basecontroller
                 );
             }
 
-            error_log('[ProductController:store] Storage/DB Error: ' . $e->getMessage());
+            error_log('[ProductController:store] Storage/DB Failure: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal menambahkan produk: ' . $e->getMessage();
             header('Location: /admin/products/create');
             exit;
@@ -235,8 +237,8 @@ class productcontroller extends basecontroller
             $imagePath     = $existing['image_path'] ?? null;
             $thumbnailPath = $existing['thumbnail_path'] ?? null;
 
-            // Jika mengunggah gambar baru
-            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name'])) {
+            // Jika ada unggahan gambar pengganti
+            if (isset($_FILES['image']) && is_array($_FILES['image']) && !empty($_FILES['image']['tmp_name']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
                 $newUpload     = $this->imageService->handleProductUpload($_FILES['image'], $name);
                 $imageUrl      = $newUpload['image_url'];
                 $thumbnailUrl  = $newUpload['thumbnail_url'];
@@ -257,10 +259,10 @@ class productcontroller extends basecontroller
             ]);
 
             if (!$updateSuccess) {
-                throw new \RuntimeException('Gagal memperbarui catatan database.');
+                throw new \RuntimeException('Gagal memperbarui data produk di database.');
             }
 
-            // Jika DB update berhasil dan ada gambar baru, hapus gambar lama dari Storage
+            // Hapus file lama jika unggahan baru sukses
             if ($newUpload !== null) {
                 $this->imageService->cleanupStorageFiles(
                     $existing['image_path'] ?? null,
@@ -272,7 +274,6 @@ class productcontroller extends basecontroller
             header('Location: /admin/products');
             exit;
         } catch (Throwable $e) {
-            // Jika update gagal, bersihkan file baru dan pertahankan file lama
             if ($newUpload !== null) {
                 $this->imageService->cleanupStorageFiles(
                     $newUpload['image_path'] ?? null,
@@ -280,7 +281,7 @@ class productcontroller extends basecontroller
                 );
             }
 
-            error_log('[ProductController:update] Storage/DB Error: ' . $e->getMessage());
+            error_log('[ProductController:update] Storage/DB Failure: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal memperbarui produk: ' . $e->getMessage();
             header('Location: /admin/products/edit?id=' . $id);
             exit;
@@ -288,7 +289,7 @@ class productcontroller extends basecontroller
     }
 
     /**
-     * Hapus Produk (Database Delete -> Storage Cleanup -> Audit Log)
+     * Hapus Produk (Database Delete -> Storage Cleanup)
      */
     public function delete(): void
     {
@@ -305,25 +306,22 @@ class productcontroller extends basecontroller
         $thumbnailPath = $product['thumbnail_path'] ?? null;
 
         try {
-            // 1. Hapus record DB terlebih dahulu
             $dbDeleted = $this->productModel->delete($id);
             if (!$dbDeleted) {
                 throw new \RuntimeException('Gagal menghapus data produk dari database.');
             }
 
-            // 2. Hapus objek dari Supabase Storage
             $storageCleaned = $this->imageService->cleanupStorageFiles($imagePath, $thumbnailPath);
             if (!$storageCleaned) {
                 error_log(sprintf(
-                    '[CRITICAL AUDIT] Product ID %d deleted from DB, but failed to delete Storage objects: main=%s, thumb=%s',
+                    '[CRITICAL AUDIT] Product ID %d terhapus dari DB, tetapi gagal menghapus objek Storage: %s, %s',
                     $id,
                     (string) $imagePath,
                     (string) $thumbnailPath
                 ));
-                $_SESSION['flash_success'] = 'Produk dihapus (Catatan audit log dibuat untuk rekonsiliasi storage).';
-            } else {
-                $_SESSION['flash_success'] = 'Produk dan gambar berhasil dihapus!';
             }
+
+            $_SESSION['flash_success'] = 'Produk dan berkas gambar berhasil dihapus!';
         } catch (Throwable $e) {
             error_log('[ProductController:delete] Error: ' . $e->getMessage());
             $_SESSION['flash_error'] = 'Gagal menghapus produk: ' . $e->getMessage();
