@@ -28,6 +28,17 @@ class productcontroller extends basecontroller
         }
 
         $adminPhone = '081234567890';
+        try {
+            $db = database::getconnection();
+            $stmt = $db->query("SELECT phone FROM admins ORDER BY id ASC LIMIT 1");
+            $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!empty($admin['phone'])) {
+                $adminPhone = (string) $admin['phone'];
+            }
+        } catch (Throwable $e) {
+            error_log('[ProductController:home] Error: ' . $e->getMessage());
+        }
+
         $possibleViews = [
             __DIR__ . '/../views/home/index.php',
             __DIR__ . '/../views/Home/index.php',
@@ -53,7 +64,19 @@ class productcontroller extends basecontroller
         }
 
         $totalVisitors = 0;
-        $totalOrders = 0;
+        $waClicks = 0;
+
+        try {
+            $db = database::getconnection();
+            $vStmt = $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'visitor'");
+            $totalVisitors = (int) $vStmt->fetchColumn();
+
+            $oStmt = $db->query("SELECT COUNT(*) FROM visitor_stats WHERE type = 'order_click'");
+            $waClicks = (int) $oStmt->fetchColumn();
+        } catch (Throwable $e) {
+            error_log('[ProductController:dashboard] Error: ' . $e->getMessage());
+        }
+
         $totalProducts = count($products);
 
         require_once __DIR__ . '/../views/admin/dashboard.php';
@@ -78,7 +101,7 @@ class productcontroller extends basecontroller
     {
         $error = $_SESSION['flash_error'] ?? null;
         if (isset($_GET['error'])) {
-            $error = $error ?? 'Terjadi kesalahan sistem. Silakan periksa log server.';
+            $error = $error ?? 'Terjadi kesalahan sistem.';
         }
         unset($_SESSION['flash_error']);
 
@@ -87,8 +110,6 @@ class productcontroller extends basecontroller
 
     public function store(): void
     {
-        error_log('[PRODUCT_TRACE] 1. POST /admin/products/store ENTERED');
-
         $name        = trim((string) ($_POST['name'] ?? ''));
         $price       = (float) ($_POST['price'] ?? 0);
         $description = trim((string) ($_POST['description'] ?? ''));
@@ -99,7 +120,6 @@ class productcontroller extends basecontroller
         $status = in_array($rawStatus, $allowedStatuses, true) ? $rawStatus : 'available';
 
         if ($name === '' || $price <= 0) {
-            error_log('[PRODUCT_TRACE] Validation Failed: Name or Price empty');
             $_SESSION['flash_error'] = 'Nama produk dan harga harus diisi dengan benar!';
             header('Location: /admin/products/create');
             exit;
@@ -107,18 +127,12 @@ class productcontroller extends basecontroller
 
         $uploadedImage = null;
         try {
-            error_log('[PRODUCT_TRACE] 2. Checking $_FILES validation');
-            
             if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
-                $errCode = $_FILES['image']['error'] ?? 'MISSING';
-                error_log('[PRODUCT_TRACE] $_FILES Validation Failed. Code: ' . $errCode);
-                throw new \RuntimeException('Upload gambar diwajibkan dan tidak boleh gagal. Kode Error: ' . $errCode);
+                throw new \RuntimeException('Upload gambar diwajibkan dan tidak boleh gagal.');
             }
 
-            error_log('[PRODUCT_TRACE] 3. Calling ProductImageService::handleProductUpload()');
             $uploadedImage = $this->imageService->handleProductUpload($_FILES['image'], $name);
             
-            error_log('[PRODUCT_TRACE] 4. Calling Product::create()');
             $insertSuccess = $this->productModel->create([
                 'name'           => $name,
                 'price'          => $price,
@@ -132,20 +146,15 @@ class productcontroller extends basecontroller
             ]);
 
             if (!$insertSuccess) {
-                error_log('[PRODUCT_TRACE] Product::create() returned FALSE');
                 throw new \RuntimeException('Gagal mengeksekusi query INSERT ke database.');
             }
 
-            error_log('[PRODUCT_TRACE] 5. INSERT SUCCESS. Redirecting to /admin/products');
             $_SESSION['flash_success'] = 'Produk berhasil ditambahkan ke katalog!';
             header('Location: /admin/products');
             exit;
 
         } catch (Throwable $e) {
-            error_log('[PRODUCT_TRACE] X. EXCEPTION CAUGHT: ' . $e->getMessage());
-            
             if ($uploadedImage !== null) {
-                error_log('[PRODUCT_TRACE] Rolling back Storage objects...');
                 $this->imageService->cleanupStorageFiles(
                     $uploadedImage['image_path'] ?? null,
                     $uploadedImage['thumbnail_path'] ?? null
@@ -153,7 +162,6 @@ class productcontroller extends basecontroller
             }
 
             $_SESSION['flash_error'] = 'Gagal menambahkan produk: ' . $e->getMessage();
-            // Fallback ?error=1 untuk Vercel jika session hilang
             header('Location: /admin/products/create?error=1');
             exit;
         }
@@ -165,6 +173,7 @@ class productcontroller extends basecontroller
         $product = $this->productModel->find($id);
 
         if (!$product) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan.';
             header('Location: /admin/products');
             exit;
         }
@@ -175,14 +184,109 @@ class productcontroller extends basecontroller
 
     public function update(): void
     {
-        // Standalone safe update logic...
-        header('Location: /admin/products');
-        exit;
+        $id          = (int) ($_POST['id'] ?? 0);
+        $name        = trim((string) ($_POST['name'] ?? ''));
+        $price       = (float) ($_POST['price'] ?? 0);
+        $description = trim((string) ($_POST['description'] ?? ''));
+        $stock       = max(0, (int) ($_POST['stock'] ?? 10));
+
+        $allowedStatuses = ['available', 'reserved', 'sold'];
+        $rawStatus = (string) ($_POST['status'] ?? 'available');
+        $status = in_array($rawStatus, $allowedStatuses, true) ? $rawStatus : 'available';
+
+        if ($id <= 0 || $name === '' || $price <= 0) {
+            $_SESSION['flash_error'] = 'Data produk tidak valid!';
+            header('Location: /admin/products/edit?id=' . $id);
+            exit;
+        }
+
+        $existing = $this->productModel->find($id);
+        if (!$existing) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
+            header('Location: /admin/products');
+            exit;
+        }
+
+        $newUpload = null;
+        try {
+            $imageUrl      = $existing['image_url'] ?? null;
+            $thumbnailUrl  = $existing['thumbnail_url'] ?? null;
+            $imagePath     = $existing['image_path'] ?? null;
+            $thumbnailPath = $existing['thumbnail_path'] ?? null;
+
+            if (isset($_FILES['image']) && is_array($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+                $newUpload     = $this->imageService->handleProductUpload($_FILES['image'], $name);
+                $imageUrl      = $newUpload['image_url'];
+                $thumbnailUrl  = $newUpload['thumbnail_url'];
+                $imagePath     = $newUpload['image_path'];
+                $thumbnailPath = $newUpload['thumbnail_path'];
+            }
+
+            $updateSuccess = $this->productModel->update($id, [
+                'name'           => $name,
+                'price'          => $price,
+                'description'    => $description,
+                'image_url'      => $imageUrl,
+                'thumbnail_url'  => $thumbnailUrl,
+                'image_path'     => $imagePath,
+                'thumbnail_path' => $thumbnailPath,
+                'stock'          => $stock,
+                'status'         => $status
+            ]);
+
+            if (!$updateSuccess) {
+                throw new \RuntimeException('Gagal memperbarui data produk di database.');
+            }
+
+            if ($newUpload !== null) {
+                $this->imageService->cleanupStorageFiles(
+                    $existing['image_path'] ?? null,
+                    $existing['thumbnail_path'] ?? null
+                );
+            }
+
+            $_SESSION['flash_success'] = 'Produk berhasil diperbarui!';
+            header('Location: /admin/products');
+            exit;
+        } catch (Throwable $e) {
+            if ($newUpload !== null) {
+                $this->imageService->cleanupStorageFiles(
+                    $newUpload['image_path'] ?? null,
+                    $newUpload['thumbnail_path'] ?? null
+                );
+            }
+            $_SESSION['flash_error'] = 'Gagal memperbarui produk: ' . $e->getMessage();
+            header('Location: /admin/products/edit?id=' . $id);
+            exit;
+        }
     }
 
     public function delete(): void
     {
-        // Standalone safe delete logic...
+        $id = (int) ($_POST['id'] ?? 0);
+        $product = $this->productModel->find($id);
+
+        if (!$product) {
+            $_SESSION['flash_error'] = 'Produk tidak ditemukan!';
+            header('Location: /admin/products');
+            exit;
+        }
+
+        $imagePath = $product['image_path'] ?? null;
+        $thumbnailPath = $product['thumbnail_path'] ?? null;
+
+        try {
+            $dbDeleted = $this->productModel->delete($id);
+            if (!$dbDeleted) {
+                throw new \RuntimeException('Gagal menghapus data produk dari database.');
+            }
+
+            $this->imageService->cleanupStorageFiles($imagePath, $thumbnailPath);
+            $_SESSION['flash_success'] = 'Produk dan berkas gambar berhasil dihapus!';
+        } catch (Throwable $e) {
+            $_SESSION['flash_error'] = 'Gagal menghapus produk: ' . $e->getMessage();
+        }
+
         header('Location: /admin/products');
         exit;
     }

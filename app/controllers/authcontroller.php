@@ -4,28 +4,21 @@ declare(strict_types=1);
 namespace app\controllers;
 
 use app\core\database;
+use Throwable;
 
 class authcontroller extends basecontroller
 {
-    /**
-     * Tampilkan Halaman Login
-     */
     public function showlogin(): void
     {
         if (!empty($_SESSION['is_admin'])) {
             header('Location: /admin/dashboard');
             exit;
         }
-
         $error = $_SESSION['login_error'] ?? null;
         unset($_SESSION['login_error']);
-
         require_once __DIR__ . '/../views/admin/login.php';
     }
 
-    /**
-     * Proses Login Admin (Mendukung PostgreSQL & MySQL)
-     */
     public function login(): void
     {
         $username = trim($_POST['username'] ?? '');
@@ -39,7 +32,6 @@ class authcontroller extends basecontroller
 
         try {
             $db = database::getconnection();
-
             $stmt = $db->prepare("SELECT * FROM admins WHERE username = :username LIMIT 1");
             $stmt->execute(['username' => $username]);
             $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
@@ -47,12 +39,9 @@ class authcontroller extends basecontroller
             $loginSuccess = false;
 
             if ($admin) {
-                // 1. Verifikasi dengan enkripsi Bcrypt
                 if (password_verify($password, $admin['password'])) {
                     $loginSuccess = true;
-                } 
-                // 2. Fallback jika akun default admin / admin123
-                elseif ($admin['password'] === $password || ($username === 'admin' && $password === 'admin123')) {
+                } elseif ($admin['password'] === $password || ($username === 'admin' && $password === 'admin123')) {
                     $loginSuccess = true;
                     $newHash = password_hash($password, PASSWORD_BCRYPT);
                     $db->prepare("UPDATE admins SET password = :pass WHERE id = :id")->execute([
@@ -61,13 +50,11 @@ class authcontroller extends basecontroller
                     ]);
                 }
             } else {
-                // Jika data admin belum ada di database, otomatis buatkan 1 akun pertama
                 if ($username === 'admin' && $password === 'admin123') {
                     $newHash = password_hash('admin123', PASSWORD_BCRYPT);
                     $db->prepare("INSERT INTO admins (username, password, phone) VALUES ('admin', :pass, '081234567890')")->execute([
                         'pass' => $newHash
                     ]);
-                    
                     $checkStmt = $db->prepare("SELECT * FROM admins WHERE username = 'admin' LIMIT 1");
                     $checkStmt->execute();
                     $admin = $checkStmt->fetch(\PDO::FETCH_ASSOC);
@@ -82,8 +69,8 @@ class authcontroller extends basecontroller
                 header('Location: /admin/dashboard');
                 exit;
             }
-        } catch (\Throwable $e) {
-            $_SESSION['login_error'] = 'Terjadi kesalahan sistem: ' . $e->getMessage();
+        } catch (Throwable $e) {
+            $_SESSION['login_error'] = 'Terjadi kesalahan sistem.';
             header('Location: /login');
             exit;
         }
@@ -93,9 +80,6 @@ class authcontroller extends basecontroller
         exit;
     }
 
-    /**
-     * Logout Admin
-     */
     public function logout(): void
     {
         unset($_SESSION['is_admin'], $_SESSION['admin_id'], $_SESSION['admin_username']);
@@ -104,26 +88,21 @@ class authcontroller extends basecontroller
         exit;
     }
 
-    /**
-     * Tampilkan Halaman Ganti Kontak HP
-     */
     public function showChangeContact(): void
     {
         $currentPhone = '';
         try {
             $db = database::getconnection();
             $adminId = $_SESSION['admin_id'] ?? null;
-            
             if ($adminId) {
                 $stmt = $db->prepare("SELECT phone FROM admins WHERE id = :id LIMIT 1");
                 $stmt->execute(['id' => $adminId]);
             } else {
                 $stmt = $db->query("SELECT phone FROM admins ORDER BY id ASC LIMIT 1");
             }
-
             $admin = $stmt->fetch(\PDO::FETCH_ASSOC);
             $currentPhone = $admin['phone'] ?? '';
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $currentPhone = '';
         }
 
@@ -134,13 +113,9 @@ class authcontroller extends basecontroller
         require_once __DIR__ . '/../views/admin/change_contact.php';
     }
 
-    /**
-     * Proses Simpan Kontak HP
-     */
     public function updateContact(): void
     {
         $phone = trim($_POST['phone'] ?? '');
-
         if (empty($phone)) {
             $_SESSION['flash_error'] = 'Nomor HP tidak boleh kosong!';
             header('Location: /admin/change-contact');
@@ -150,7 +125,6 @@ class authcontroller extends basecontroller
         try {
             $db = database::getconnection();
             $adminId = $_SESSION['admin_id'] ?? null;
-
             if ($adminId) {
                 $stmt = $db->prepare("UPDATE admins SET phone = :phone WHERE id = :id");
                 $stmt->execute(['phone' => $phone, 'id' => $adminId]);
@@ -158,9 +132,8 @@ class authcontroller extends basecontroller
                 $stmt = $db->prepare("UPDATE admins SET phone = :phone WHERE id = (SELECT id FROM admins ORDER BY id ASC LIMIT 1)");
                 $stmt->execute(['phone' => $phone]);
             }
-
             $_SESSION['flash_success'] = 'Nomor kontak WhatsApp berhasil diperbarui!';
-        } catch (\Throwable $e) {
+        } catch (Throwable $e) {
             $_SESSION['flash_error'] = 'Gagal memperbarui nomor: ' . $e->getMessage();
         }
 
@@ -168,9 +141,6 @@ class authcontroller extends basecontroller
         exit;
     }
 
-    /**
-     * Tampilkan Halaman Ganti Password
-     */
     public function showchangePassword(): void
     {
         $success = $_SESSION['flash_success'] ?? null;
@@ -180,9 +150,6 @@ class authcontroller extends basecontroller
         require_once __DIR__ . '/../views/admin/change_password.php';
     }
 
-    /**
-     * Proses Ganti Password -> Otomatis Menuju Dashboard
-     */
     public function updatepassword(): void
     {
         $oldPassword     = $_POST['old_password'] ?? '';
@@ -201,10 +168,15 @@ class authcontroller extends basecontroller
             exit;
         }
 
+        if (strlen($newPassword) < 6) {
+            $_SESSION['flash_error'] = 'Password baru minimal 6 karakter!';
+            header('Location: /admin/change-password');
+            exit;
+        }
+
         try {
             $db = database::getconnection();
             $adminId = $_SESSION['admin_id'] ?? null;
-            
             if ($adminId) {
                 $stmt = $db->prepare("SELECT * FROM admins WHERE id = :id LIMIT 1");
                 $stmt->execute(['id' => $adminId]);
@@ -234,8 +206,8 @@ class authcontroller extends basecontroller
             $_SESSION['flash_success'] = 'Password berhasil diperbarui!';
             header('Location: /admin/dashboard');
             exit;
-        } catch (\Throwable $e) {
-            $_SESSION['flash_error'] = 'Gagal mengubah password: ' . $e->getMessage();
+        } catch (Throwable $e) {
+            $_SESSION['flash_error'] = 'Gagal mengubah password.';
             header('Location: /admin/change-password');
             exit;
         }

@@ -8,7 +8,6 @@
 </head>
 <body class="bg-rose-50/40 text-slate-800 font-sans antialiased selection:bg-rose-200">
 
-    <!-- Header / Navbar Mobile & Desktop -->
     <header class="bg-white/90 backdrop-blur-md sticky top-0 z-50 border-b border-rose-100 shadow-sm">
         <div class="max-w-6xl mx-auto px-4 py-3 sm:py-4 flex justify-between items-center">
             <a href="/" class="text-xl sm:text-2xl font-bold text-rose-600 tracking-tight flex items-center gap-1.5">
@@ -21,7 +20,6 @@
         </div>
     </header>
 
-    <!-- Hero Banner Responsif -->
     <section class="bg-gradient-to-b from-rose-100/70 to-transparent py-8 sm:py-14 text-center px-4">
         <div class="max-w-2xl mx-auto">
             <h1 class="text-2xl sm:text-4xl md:text-5xl font-extrabold text-slate-900 tracking-tight leading-tight">
@@ -33,35 +31,32 @@
         </div>
     </section>
 
-    <!-- Product Catalog Section -->
     <main class="max-w-6xl mx-auto px-3 sm:px-4 py-4 sm:py-8 mb-16">
         <h2 class="text-lg sm:text-xl font-bold text-slate-800 mb-4 sm:mb-6 flex items-center gap-2">
             <span>💐</span> Katalog Buket Bunga
         </h2>
 
         <?php if (!empty($products)): ?>
-            <!-- Grid Responsif: 2 Kolom di HP, 3 Kolom di Tablet, 4 Kolom di Desktop -->
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-6">
                 <?php foreach ($products as $product): ?>
                     <?php 
-                        // Penentuan URL Gambar Berdasarkan Prioritas Pipeline Baru vs Legacy
                         $imgSrc = null;
                         if (!empty($product['thumbnail_url'])) {
-                            $imgSrc = $product['thumbnail_url']; // Prioritas 1: Thumbnail Supabase
+                            $imgSrc = $product['thumbnail_url'];
                         } elseif (!empty($product['image_url'])) {
-                            $imgSrc = $product['image_url']; // Prioritas 2: Main Image Supabase
+                            $imgSrc = $product['image_url'];
                         } elseif (!empty($product['image'])) {
-                            $imgSrc = '/uploads/products/' . $product['image']; // Prioritas 3: Fallback Legacy Lokal
+                            $imgSrc = '/uploads/products/' . $product['image'];
                         }
                     ?>
                     <div class="bg-white rounded-xl sm:rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition duration-200 overflow-hidden flex flex-col justify-between">
                         <div>
-                            <!-- Product Image -->
                             <div class="h-36 sm:h-52 bg-slate-100 overflow-hidden relative">
                                 <?php if (!empty($imgSrc)): ?>
                                     <img src="<?= htmlspecialchars($imgSrc, ENT_QUOTES, 'UTF-8') ?>" 
                                          alt="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>" 
-                                         class="w-full h-full object-cover hover:scale-105 transition duration-300">
+                                         class="w-full h-full object-cover hover:scale-105 transition duration-300"
+                                         loading="lazy">
                                 <?php else: ?>
                                     <div class="w-full h-full flex items-center justify-center text-slate-400 text-[10px] sm:text-xs italic p-2 text-center">
                                         Gambar belum tersedia
@@ -69,13 +64,12 @@
                                 <?php endif; ?>
                             </div>
 
-                            <!-- Product Info -->
                             <div class="p-2.5 sm:p-4">
                                 <h3 class="font-bold text-slate-800 text-xs sm:text-base line-clamp-1">
                                     <?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>
                                 </h3>
                                 <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 line-clamp-2">
-                                    <?= htmlspecialchars($product['description'] ?? 'Buket bunga cantik berkualitas tinggi.', ENT_QUOTES, 'UTF-8') ?>
+                                    <?= htmlspecialchars($product['description'] ?? 'Buket bunga cantik.', ENT_QUOTES, 'UTF-8') ?>
                                 </p>
                                 <div class="mt-2 sm:mt-3 flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
                                     <span class="text-sm sm:text-lg font-extrabold text-rose-600">
@@ -88,10 +82,16 @@
                             </div>
                         </div>
 
-                        <!-- Order via WhatsApp Button -->
                         <div class="p-2.5 sm:p-4 pt-0">
                             <?php 
-                                $whatsappNumber = "6281234567890"; // Ganti dengan nomor WhatsApp Anda
+                                $waNumRaw = preg_replace('/[^0-9]/', '', $adminPhone ?? '6281234567890');
+                                if (str_starts_with($waNumRaw, '0')) {
+                                    $waNumRaw = '62' . substr($waNumRaw, 1);
+                                }
+                                if (empty($waNumRaw)) {
+                                    $waNumRaw = '6281234567890';
+                                }
+                                $whatsappNumber = $waNumRaw;
                                 $pesanWa = rawurlencode("Halo, saya ingin memesan buket: " . $product['name'] . " (Rp " . number_format((float)$product['price'], 0, ',', '.') . ")");
                                 $waUrl = "https://wa.me/{$whatsappNumber}?text={$pesanWa}";
                             ?>
@@ -111,9 +111,8 @@
         <?php endif; ?>
     </main>
 
-    <!-- Footer -->
     <footer class="bg-white border-t border-rose-100 py-6 text-center text-[11px] sm:text-xs text-slate-400">
-        &copy; 2026 Bucket Bunga Dakota. All rights reserved.
+        &copy; <?= date('Y') ?> Bucket Bunga Dakota. All rights reserved.
     </footer>
 
     <script>
@@ -123,6 +122,5 @@
         navigator.sendBeacon('/api/track-order', formData);
     }
     </script>
-
 </body>
 </html>

@@ -17,6 +17,7 @@ class product extends basemodel
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
             return array_map([$this, 'normalizeRow'], $rows);
         } catch (Throwable $e) {
+            error_log('[ProductModel] getAll Error: ' . $e->getMessage());
             return [];
         }
     }
@@ -29,6 +30,7 @@ class product extends basemodel
             $row = $stmt->fetch(PDO::FETCH_ASSOC);
             return $row ? $this->normalizeRow($row) : null;
         } catch (Throwable $e) {
+            error_log('[ProductModel] find Error: ' . $e->getMessage());
             return null;
         }
     }
@@ -38,8 +40,6 @@ class product extends basemodel
         $name = trim((string) ($data['name'] ?? ''));
         $slug = $this->generateUniqueSlug($name);
 
-        error_log('[PRODUCT_TRACE] DB_INSERT_STARTED for Slug: ' . $slug);
-
         $stmt = $this->db->prepare("
             INSERT INTO {$this->table} (
                 name, slug, price, description, image_url, thumbnail_url, image_path, thumbnail_path, stock, status
@@ -48,7 +48,7 @@ class product extends basemodel
             )
         ");
 
-        $result = $stmt->execute([
+        return $stmt->execute([
             'name'           => $name,
             'slug'           => $slug,
             'price'          => $data['price'],
@@ -60,21 +60,43 @@ class product extends basemodel
             'stock'          => (int) ($data['stock'] ?? 10),
             'status'         => $data['status'] ?? 'available'
         ]);
-
-        if ($result) {
-            error_log('[PRODUCT_TRACE] DB_INSERT_SUCCESS');
-        }
-        return $result;
     }
 
     public function update(int $id, array $data): bool
     {
-        return false; // Simplified
+        $stmt = $this->db->prepare("
+            UPDATE {$this->table} SET 
+                name = :name, 
+                price = :price, 
+                description = :description, 
+                image_url = :image_url, 
+                thumbnail_url = :thumbnail_url, 
+                image_path = :image_path, 
+                thumbnail_path = :thumbnail_path, 
+                stock = :stock, 
+                status = :status,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id
+        ");
+
+        return $stmt->execute([
+            'name'           => $data['name'],
+            'price'          => $data['price'],
+            'description'    => $data['description'] ?? '',
+            'image_url'      => $data['image_url'] ?? null,
+            'thumbnail_url'  => $data['thumbnail_url'] ?? null,
+            'image_path'     => $data['image_path'] ?? null,
+            'thumbnail_path' => $data['thumbnail_path'] ?? null,
+            'stock'          => (int) ($data['stock'] ?? 10),
+            'status'         => $data['status'] ?? 'available',
+            'id'             => $id
+        ]);
     }
 
     public function delete(int $id): bool
     {
-        return false; // Simplified
+        $stmt = $this->db->prepare("DELETE FROM {$this->table} WHERE id = :id");
+        return $stmt->execute(['id' => $id]);
     }
 
     private function normalizeSlug(string $name): string
