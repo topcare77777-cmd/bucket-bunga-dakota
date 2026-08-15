@@ -43,13 +43,24 @@
             <!-- Grid Responsif: 2 Kolom di HP, 3 Kolom di Tablet, 4 Kolom di Desktop -->
             <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 sm:gap-6">
                 <?php foreach ($products as $product): ?>
+                    <?php 
+                        // Penentuan URL Gambar Berdasarkan Prioritas Pipeline Baru vs Legacy
+                        $imgSrc = null;
+                        if (!empty($product['thumbnail_url'])) {
+                            $imgSrc = $product['thumbnail_url']; // Prioritas 1: Thumbnail Supabase
+                        } elseif (!empty($product['image_url'])) {
+                            $imgSrc = $product['image_url']; // Prioritas 2: Main Image Supabase
+                        } elseif (!empty($product['image'])) {
+                            $imgSrc = '/uploads/products/' . $product['image']; // Prioritas 3: Fallback Legacy Lokal
+                        }
+                    ?>
                     <div class="bg-white rounded-xl sm:rounded-2xl border border-rose-100 shadow-sm hover:shadow-md transition duration-200 overflow-hidden flex flex-col justify-between">
                         <div>
                             <!-- Product Image -->
                             <div class="h-36 sm:h-52 bg-slate-100 overflow-hidden relative">
-                                <?php if (!empty($product['image'])): ?>
-                                    <img src="/uploads/products/<?= htmlspecialchars($product['image']) ?>" 
-                                         alt="<?= htmlspecialchars($product['name']) ?>" 
+                                <?php if (!empty($imgSrc)): ?>
+                                    <img src="<?= htmlspecialchars($imgSrc, ENT_QUOTES, 'UTF-8') ?>" 
+                                         alt="<?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>" 
                                          class="w-full h-full object-cover hover:scale-105 transition duration-300">
                                 <?php else: ?>
                                     <div class="w-full h-full flex items-center justify-center text-slate-400 text-[10px] sm:text-xs italic p-2 text-center">
@@ -61,10 +72,10 @@
                             <!-- Product Info -->
                             <div class="p-2.5 sm:p-4">
                                 <h3 class="font-bold text-slate-800 text-xs sm:text-base line-clamp-1">
-                                    <?= htmlspecialchars($product['name']) ?>
+                                    <?= htmlspecialchars($product['name'], ENT_QUOTES, 'UTF-8') ?>
                                 </h3>
                                 <p class="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1 line-clamp-2">
-                                    <?= htmlspecialchars($product['description'] ?? 'Buket bunga cantik berkualitas tinggi.') ?>
+                                    <?= htmlspecialchars($product['description'] ?? 'Buket bunga cantik berkualitas tinggi.', ENT_QUOTES, 'UTF-8') ?>
                                 </p>
                                 <div class="mt-2 sm:mt-3 flex flex-col sm:flex-row sm:items-baseline justify-between gap-1">
                                     <span class="text-sm sm:text-lg font-extrabold text-rose-600">
